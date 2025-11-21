@@ -193,7 +193,7 @@ const get_migrations = (migrations_home: string): { version: number; file: strin
   let files: string[] = [];
   try {
     files = fs.readdirSync(migrations_home);
-  } catch (_: unknown) {
+  } catch {
     log('error', `no migration directory ${migrations_home}. Please create it.`);
     process.exit(1);
   }
