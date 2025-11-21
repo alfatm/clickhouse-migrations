@@ -161,7 +161,7 @@ const get_migrations = (migrations_home: string): { version: number; file: strin
     });
   });
 
-  if (!migrations) {
+  if (!migrations.length) {
     log('error', `no migrations in the ${migrations_home} migrations directory`);
   }
 
