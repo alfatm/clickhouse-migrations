@@ -16,7 +16,7 @@ jest.mock('@clickhouse/client', () => ({
   createClient: mockCreateClient.mockReturnValue(mockClickHouseClient),
 }));
 
-import { migration } from '../src/migrate';
+import { runMigration } from '../src/migrate';
 
 describe('TLS Configuration Unit Tests', () => {
   const certFixturesPath = path.join(__dirname, '..', '.docker', 'clickhouse_tls', 'certificates');
@@ -31,20 +31,15 @@ describe('TLS Configuration Unit Tests', () => {
 
   describe('TLS configuration building', () => {
     it('should create ClickHouse client without TLS when no certificates provided', async () => {
-      await migration(
-        'tests/migrations/one',
-        'http://clickhouse:8123',
-        'default',
-        '',
-        'analytics',
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        true,
-      );
+      await runMigration({
+        migrationsHome: 'tests/migrations/one',
+        host: 'http://clickhouse:8123',
+        username: 'default',
+        password: '',
+        dbName: 'analytics',
+        abortDivergent: true,
+        createDatabase: true,
+      });
 
       // Verify createClient was called without TLS configuration
       const calls = mockCreateClient.mock.calls as Array<[Record<string, unknown>]>;
@@ -57,20 +52,19 @@ describe('TLS Configuration Unit Tests', () => {
     });
 
     it('should create ClickHouse client with CA certificate only', async () => {
-      await migration(
-        'tests/migrations/one',
-        'https://secure-clickhouse:8443',
-        'default',
-        'password',
-        'analytics',
-        'ENGINE=Atomic',
-        'MergeTree',  // table_engine
-        '30000',      // timeout
-        caCertPath,   // ca_cert
-        undefined,    // cert
-        undefined,    // key
-        true,         // abort_divergent
-      );
+      await runMigration({
+        migrationsHome: 'tests/migrations/one',
+        host: 'https://secure-clickhouse:8443',
+        username: 'default',
+        password: 'password',
+        dbName: 'analytics',
+        dbEngine: 'ENGINE=Atomic',
+        tableEngine: 'MergeTree',
+        timeout: '30000',
+        caCert: caCertPath,
+        abortDivergent: true,
+        createDatabase: true,
+      });
 
       // Verify createClient was called with TLS configuration containing only CA cert
       const calls = mockCreateClient.mock.calls as Array<[Record<string, unknown>]>;
@@ -90,20 +84,21 @@ describe('TLS Configuration Unit Tests', () => {
     });
 
     it('should create ClickHouse client with full TLS configuration', async () => {
-      await migration(
-        'tests/migrations/one',
-        'https://secure-clickhouse:8443',
-        'default',
-        'password',
-        'analytics',
-        'ENGINE=Atomic',
-        'MergeTree',   // table_engine
-        '30000',       // timeout
-        caCertPath,    // ca_cert
-        clientCertPath,  // cert
-        clientKeyPath,   // key
-        true,          // abort_divergent
-      );
+      await runMigration({
+        migrationsHome: 'tests/migrations/one',
+        host: 'https://secure-clickhouse:8443',
+        username: 'default',
+        password: 'password',
+        dbName: 'analytics',
+        dbEngine: 'ENGINE=Atomic',
+        tableEngine: 'MergeTree',
+        timeout: '30000',
+        caCert: caCertPath,
+        cert: clientCertPath,
+        key: clientKeyPath,
+        abortDivergent: true,
+        createDatabase: true,
+      });
 
       // Verify createClient was called with complete TLS configuration
       const calls = mockCreateClient.mock.calls as Array<[Record<string, unknown>]>;
@@ -125,20 +120,21 @@ describe('TLS Configuration Unit Tests', () => {
     });
 
     it('should combine TLS configuration with other connection options', async () => {
-      await migration(
-        'tests/migrations/one',
-        'https://secure-clickhouse:8443',
-        'default',
-        'password',
-        'analytics',
-        'ON CLUSTER production ENGINE=Replicated',
-        'MergeTree',     // table_engine
-        '60000',         // timeout
-        caCertPath,      // ca_cert
-        clientCertPath,  // cert
-        clientKeyPath,   // key
-        true,            // abort_divergent
-      );
+      await runMigration({
+        migrationsHome: 'tests/migrations/one',
+        host: 'https://secure-clickhouse:8443',
+        username: 'default',
+        password: 'password',
+        dbName: 'analytics',
+        dbEngine: 'ON CLUSTER production ENGINE=Replicated',
+        tableEngine: 'MergeTree',
+        timeout: '60000',
+        caCert: caCertPath,
+        cert: clientCertPath,
+        key: clientKeyPath,
+        abortDivergent: true,
+        createDatabase: true,
+      });
 
       const calls = mockCreateClient.mock.calls as Array<[Record<string, unknown>]>;
       const dbCreationCall = calls.find((call) => !call[0].database);
@@ -171,20 +167,21 @@ describe('TLS Configuration Unit Tests', () => {
 
   describe('Certificate content validation', () => {
     it('should read actual certificate content from files', async () => {
-      await migration(
-        'tests/migrations/one',
-        'https://secure-clickhouse:8443',
-        'default',
-        'password',
-        'analytics',
-        'ENGINE=Atomic',
-        'MergeTree',     // table_engine
-        '30000',         // timeout
-        caCertPath,      // ca_cert
-        clientCertPath,  // cert
-        clientKeyPath,   // key
-        true,            // abort_divergent
-      );
+      await runMigration({
+        migrationsHome: 'tests/migrations/one',
+        host: 'https://secure-clickhouse:8443',
+        username: 'default',
+        password: 'password',
+        dbName: 'analytics',
+        dbEngine: 'ENGINE=Atomic',
+        tableEngine: 'MergeTree',
+        timeout: '30000',
+        caCert: caCertPath,
+        cert: clientCertPath,
+        key: clientKeyPath,
+        abortDivergent: true,
+        createDatabase: true,
+      });
 
       const calls = mockCreateClient.mock.calls as Array<[Record<string, unknown>]>;
       const tlsCall = calls.find((call) => call[0].tls);
@@ -206,20 +203,19 @@ describe('TLS Configuration Unit Tests', () => {
 
   describe('Database creation with TLS', () => {
     it('should use TLS for both database creation and migration operations', async () => {
-      await migration(
-        'tests/migrations/one',
-        'https://secure-clickhouse:8443',
-        'default',
-        'password',
-        'analytics',
-        'ENGINE=Atomic',
-        'MergeTree',  // table_engine
-        '30000',      // timeout
-        caCertPath,   // ca_cert
-        undefined,    // cert
-        undefined,    // key
-        true,         // abort_divergent
-      );
+      await runMigration({
+        migrationsHome: 'tests/migrations/one',
+        host: 'https://secure-clickhouse:8443',
+        username: 'default',
+        password: 'password',
+        dbName: 'analytics',
+        dbEngine: 'ENGINE=Atomic',
+        tableEngine: 'MergeTree',
+        timeout: '30000',
+        caCert: caCertPath,
+        abortDivergent: true,
+        createDatabase: true,
+      });
 
       // Should have exactly 2 calls: one for DB creation, one for migrations
       expect(mockCreateClient).toHaveBeenCalledTimes(2);

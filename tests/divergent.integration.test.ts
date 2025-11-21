@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 
-import { migration } from '../src/migrate';
+import { runMigration } from '../src/migrate';
 
 // Mock the ClickHouse client module
 const mockQuery = jest.fn();
@@ -20,17 +20,11 @@ jest.mock('@clickhouse/client', () => ({
 }));
 
 describe('Divergent migration tests with abort_divergent flag', () => {
-  let mockExit: jest.SpiedFunction<(code?: string | number | null | undefined) => never>;
   let consoleErrorSpy: jest.SpiedFunction<typeof console.error>;
   let consoleLogSpy: jest.SpiedFunction<typeof console.log>;
 
   beforeEach(() => {
     jest.clearAllMocks();
-
-    // Mock process.exit to throw an error instead of actually exiting
-    mockExit = jest.spyOn(process, 'exit').mockImplementation((code?: string | number | null | undefined) => {
-      throw new Error(`process.exit: ${code}`);
-    }) as jest.SpiedFunction<(code?: string | number | null | undefined) => never>;
 
     consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
     consoleLogSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
@@ -47,7 +41,6 @@ describe('Divergent migration tests with abort_divergent flag', () => {
   });
 
   afterEach(() => {
-    mockExit.mockRestore();
     consoleErrorSpy.mockRestore();
     consoleLogSpy.mockRestore();
   });
@@ -59,37 +52,17 @@ describe('Divergent migration tests with abort_divergent flag', () => {
       json: () => Promise.resolve([{ version: 1, checksum: 'old_checksum_value', migration_name: '1_init.sql' }]),
     });
 
-    try {
-      await migration(
-        'tests/migrations/one',
-        'http://sometesthost:8123',
-        'default',
-        '',
-        'analytics',
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        true, // abort_divergent = true
-      );
-      // Should not reach here
-      expect(true).toBe(false);
-    } catch (e: unknown) {
-      expect((e as Error).message).toBe('process.exit: 1');
-    }
-
-    expect(mockExit).toHaveBeenCalledWith(1);
-
-    // Check that the error was logged (last parameter can be empty string or undefined)
-    const errorCall = consoleErrorSpy.mock.calls[0];
-    expect(errorCall[0]).toBe('\x1b[36m');
-    expect(errorCall[1]).toBe('clickhouse-migrations :');
-    expect(errorCall[2]).toBe('\x1b[31m');
-    expect(errorCall[3]).toBe(
-      "Error: a migration file should't be changed after apply. Please, restore content of the 1_init.sql migrations.",
-    );
+    await expect(
+      runMigration({
+        migrationsHome: 'tests/migrations/one',
+        host: 'http://sometesthost:8123',
+        username: 'default',
+        password: '',
+        dbName: 'analytics',
+        abortDivergent: true,
+        createDatabase: true,
+      }),
+    ).rejects.toThrow("Migration file shouldn't be changed after apply. Please restore content of the 1_init.sql migration.");
   });
 
   it('Should continue with warning when abort_divergent=false and checksum differs', async () => {
@@ -99,23 +72,15 @@ describe('Divergent migration tests with abort_divergent flag', () => {
       json: () => Promise.resolve([{ version: 1, checksum: 'old_checksum_value', migration_name: '1_init.sql' }]),
     });
 
-    await migration(
-      'tests/migrations/one',
-      'http://sometesthost:8123',
-      'default',
-      '',
-      'analytics',
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      false, // abort_divergent = false
-    );
-
-    // Should not exit
-    expect(mockExit).not.toHaveBeenCalled();
+    await runMigration({
+      migrationsHome: 'tests/migrations/one',
+      host: 'http://sometesthost:8123',
+      username: 'default',
+      password: '',
+      dbName: 'analytics',
+      abortDivergent: false,
+      createDatabase: true,
+    });
 
     // Should log warning message
     expect(consoleLogSpy).toHaveBeenCalledWith(

@@ -1,6 +1,6 @@
 import { describe, it, expect, jest } from '@jest/globals';
 
-import { migration } from '../src/migrate';
+import { runMigration } from '../src/migrate';
 
 jest.mock('@clickhouse/client', () => ({ createClient: () => createClient1 }));
 
@@ -21,20 +21,15 @@ describe('Table engine configuration tests', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const execSpy = jest.spyOn(createClient1, 'exec') as jest.MockedFunction<any>;
 
-    await migration(
-      'tests/migrations/one',
-      'http://sometesthost:8123',
-      'default',
-      '',
-      'analytics',
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      true,
-    );
+    await runMigration({
+      migrationsHome: 'tests/migrations/one',
+      host: 'http://sometesthost:8123',
+      username: 'default',
+      password: '',
+      dbName: 'analytics',
+      abortDivergent: true,
+      createDatabase: true,
+    });
 
     // Check that _migrations table was created with default MergeTree engine
     expect(execSpy).toHaveBeenNthCalledWith(2, {
@@ -59,20 +54,16 @@ describe('Table engine configuration tests', () => {
 
     const customEngine = "ReplicatedMergeTree('/clickhouse/tables/{database}/migrations', '{replica}')";
 
-    await migration(
-      'tests/migrations/one',
-      'http://sometesthost:8123',
-      'default',
-      '',
-      'analytics',
-      undefined,
-      customEngine, // table_engine parameter
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      true,
-    );
+    await runMigration({
+      migrationsHome: 'tests/migrations/one',
+      host: 'http://sometesthost:8123',
+      username: 'default',
+      password: '',
+      dbName: 'analytics',
+      tableEngine: customEngine,
+      abortDivergent: true,
+      createDatabase: true,
+    });
 
     // Check that _migrations table was created with custom engine
     expect(execSpy).toHaveBeenNthCalledWith(2, {
@@ -97,20 +88,16 @@ describe('Table engine configuration tests', () => {
 
     const cloudEngine = 'SharedMergeTree';
 
-    await migration(
-      'tests/migrations/one',
-      'http://sometesthost:8123',
-      'default',
-      '',
-      'analytics',
-      undefined,
-      cloudEngine, // table_engine parameter
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      true,
-    );
+    await runMigration({
+      migrationsHome: 'tests/migrations/one',
+      host: 'http://sometesthost:8123',
+      username: 'default',
+      password: '',
+      dbName: 'analytics',
+      tableEngine: cloudEngine,
+      abortDivergent: true,
+      createDatabase: true,
+    });
 
     // Check that _migrations table was created with SharedMergeTree
     expect(execSpy).toHaveBeenNthCalledWith(2, {

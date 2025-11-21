@@ -1,6 +1,6 @@
 import { describe, it, expect, jest } from '@jest/globals';
 
-import { migration } from '../src/migrate';
+import { runMigration } from '../src/migrate';
 
 jest.mock('@clickhouse/client', () => ({ createClient: () => createClient1 }));
 
@@ -27,20 +27,15 @@ describe('Migration tests', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const insertSpy = jest.spyOn(createClient1, 'insert') as jest.MockedFunction<any>;
 
-    await migration(
-      'tests/migrations/one',
-      'http://sometesthost:8123',
-      'default',
-      '',
-      'analytics',
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      true,
-    );
+    await runMigration({
+      migrationsHome: 'tests/migrations/one',
+      host: 'http://sometesthost:8123',
+      username: 'default',
+      password: '',
+      dbName: 'analytics',
+      abortDivergent: true,
+      createDatabase: true,
+    });
 
     expect(execSpy).toHaveBeenCalledTimes(3);
     expect(querySpy).toHaveBeenCalledTimes(1);

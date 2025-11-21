@@ -35,7 +35,7 @@ describe('Execution tests', () => {
     const result = await execute(command, { cwd: '.' });
 
     expect(result.stderr).toBe(
-      '\x1B[36m clickhouse-migrations : \x1B[31m Error: no migration directory /app/clickhouse/migrations. Please create it. \n',
+      '\x1B[36m clickhouse-migrations : \x1B[31m Error: No migration directory /app/clickhouse/migrations. Please create it. \n',
     );
   });
 
@@ -43,7 +43,7 @@ describe('Execution tests', () => {
     const result = await execute('node lib/cli.js migrate', { env: { ...process.env, ...envVars } });
 
     expect(result.stderr).toBe(
-      '\x1B[36m clickhouse-migrations : \x1B[31m Error: no migration directory /app/clickhouse/migrations. Please create it. \n',
+      '\x1B[36m clickhouse-migrations : \x1B[31m Error: No migration directory /app/clickhouse/migrations. Please create it. \n',
     );
   });
 
@@ -54,7 +54,7 @@ describe('Execution tests', () => {
     const result = await execute(command, { cwd: '.' });
 
     expect(result.stderr).toBe(
-      '\x1B[36m clickhouse-migrations : \x1B[31m Error: a migration name should start from a non-negative integer, example: 0_init.sql or 1_init.sql. Please check, if the migration bad_1.sql is named correctly \n',
+      '\x1B[36m clickhouse-migrations : \x1B[31m Error: Migration name should start from a non-negative integer, example: 0_init.sql or 1_init.sql. Invalid migration: bad_1.sql \n',
     );
   });
 });

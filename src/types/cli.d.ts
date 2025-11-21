@@ -30,3 +30,31 @@ export type CliParameters = {
 export type QueryError = {
   message: string;
 };
+
+export type TlsConfig = {
+  caCert?: string;
+  cert?: string;
+  key?: string;
+};
+
+export type ConnectionConfig = {
+  host: string;
+  username: string;
+  password: string;
+  dbName?: string;
+  timeout?: string;
+} & TlsConfig;
+
+export type CreateDbConfig = {
+  dbName: string;
+  dbEngine?: string;
+} & ConnectionConfig;
+
+export type MigrationRunConfig = {
+  migrationsHome: string;
+  dbName: string;
+  dbEngine?: string;
+  tableEngine?: string;
+  abortDivergent?: boolean;
+  createDatabase?: boolean;
+} & ConnectionConfig;
