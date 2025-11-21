@@ -37,4 +37,28 @@ describe('Sql settings parse', () => {
 
     expect(sql_sets(input)).toEqual(output);
   });
+
+  it('set with equals sign in value', async () => {
+    const input = "SET option = 'value=something';\nSELECT * FROM events";
+
+    const output = { option: 'value=something' };
+
+    expect(sql_sets(input)).toEqual(output);
+  });
+
+  it('set without value should be ignored', async () => {
+    const input = 'SET option_without_value;\nSET valid_option = 1;\nSELECT * FROM events';
+
+    const output = { valid_option: '1' };
+
+    expect(sql_sets(input)).toEqual(output);
+  });
+
+  it('set with quoted value', async () => {
+    const input = "SET string_option = 'sometext';\nSET number_option = 123;\nSELECT * FROM events";
+
+    const output = { string_option: 'sometext', number_option: '123' };
+
+    expect(sql_sets(input)).toEqual(output);
+  });
 });

@@ -14,7 +14,7 @@ const sql_queries = (content: string): string[] => {
 
 // Extract query settings from migrations.
 const sql_sets = (content: string) => {
-  const sets: { [key: string]: string } = {};
+  const sets: { [key: string]: string | number } = {};
 
   const sets_arr = content
     .replace(/(--|#!|#\s).*(\n|\r\n|\r|$)/gm, '\n')
@@ -25,9 +25,25 @@ const sql_sets = (content: string) => {
     .split(';');
 
   sets_arr.forEach((set_full) => {
-    const set = set_full.split('=');
-    if (set[0]) {
-      sets[set[0]] = set[1];
+    const trimmed = set_full.trim();
+    if (!trimmed) {
+      return;
+    }
+
+    // Split only on first '=' to handle values containing '='
+    const equalIndex = trimmed.indexOf('=');
+    if (equalIndex === -1) {
+      // SET without value - skip or warn
+      return;
+    }
+
+    const key = trimmed.substring(0, equalIndex).trim();
+    const value = trimmed.substring(equalIndex + 1).trim();
+
+    if (key && value) {
+      // Remove quotes if present and store the value
+      const unquotedValue = value.replace(/^['"](.*)['"]$/, '$1');
+      sets[key] = unquotedValue;
     }
   });
 
