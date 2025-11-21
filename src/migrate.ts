@@ -16,6 +16,44 @@ const log = (type: 'info' | 'error' = 'info', message: string, error?: string) =
   }
 };
 
+/**
+ * Parses a boolean value from CLI arguments or environment variables.
+ * Handles various common boolean representations.
+ *
+ * @param value - The value to parse (can be string, boolean, number, or undefined)
+ * @param defaultValue - The default value to return if value is undefined (default: true)
+ * @returns The parsed boolean value
+ *
+ * @example
+ * parseBoolean(undefined, true) // returns true (default)
+ * parseBoolean('false') // returns false
+ * parseBoolean('true') // returns true
+ * parseBoolean('0') // returns false
+ * parseBoolean('no') // returns false
+ * parseBoolean('off') // returns false
+ */
+const parseBoolean = (value: unknown, defaultValue: boolean = true): boolean => {
+  if (value === undefined || value === null) {
+    return defaultValue;
+  }
+
+  // If already a boolean, return as-is
+  if (typeof value === 'boolean') {
+    return value;
+  }
+
+  // If a number, treat 0 as false, anything else as true
+  if (typeof value === 'number') {
+    return value !== 0;
+  }
+
+  // Convert to lowercase string and check against falsy values
+  const str = String(value).toLowerCase().trim();
+  const falsyValues = ['false', '0', 'no', 'off', 'n'];
+
+  return !falsyValues.includes(str);
+};
+
 const connect = (
   url: string,
   username: string,
@@ -441,10 +479,8 @@ const migrate = () => {
       process.env.CH_MIGRATIONS_CREATE_DATABASE,
     )
     .action(async (options: CliParameters) => {
-      const abortDivergent =
-        options.abortDivergent === undefined ? true : String(options.abortDivergent).toLowerCase() !== 'false';
-      const createDatabase =
-        options.createDatabase === undefined ? true : String(options.createDatabase).toLowerCase() !== 'false';
+      const abortDivergent = parseBoolean(options.abortDivergent, true);
+      const createDatabase = parseBoolean(options.createDatabase, true);
       await migration(
         options.migrationsHome,
         options.host,
