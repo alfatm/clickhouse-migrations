@@ -47,7 +47,10 @@ describe('Migration tests', () => {
     expect(insertSpy).toHaveBeenCalledTimes(1);
 
     expect(execSpy).toHaveBeenNthCalledWith(1, {
-      query: 'CREATE DATABASE IF NOT EXISTS `analytics`',
+      query: 'CREATE DATABASE IF NOT EXISTS {name:Identifier}',
+      query_params: {
+        name: 'analytics',
+      },
       clickhouse_settings: {
         wait_end_of_query: 1,
       },

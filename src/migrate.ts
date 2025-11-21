@@ -8,11 +8,37 @@ import type { MigrationBase, MigrationsRowData, CliParameters, QueryError } from
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { version } = require('../package.json');
 
+// Console color constants
+const COLORS = {
+  CYAN: '\x1b[36m',
+  RED: '\x1b[31m',
+  RESET: '\x1b[0m',
+} as const;
+
+// Validation patterns for SQL identifiers and clauses
+const VALIDATION_PATTERNS = {
+  DB_NAME: /^[a-zA-Z_][a-zA-Z0-9_]{0,254}$/,
+  DB_ENGINE: /^(ON\s+CLUSTER\s+[\w.-]+\s+)?ENGINE\s*=\s*[\w()]+(\s+COMMENT\s+'[^']*')?$/i,
+  TABLE_ENGINE: /^[\w]+(\([\w\s/._{}',-]*\))?$/,
+  VERSION_STRING: /^\d+$/,
+} as const;
+
+// Type guard for QueryError
+const isQueryError = (error: unknown): error is QueryError => {
+  return typeof error === 'object' && error !== null && 'message' in error;
+};
+
 const log = (type: 'info' | 'error' = 'info', message: string, error?: string) => {
   if (type === 'info') {
-    console.log('\x1b[36m', `clickhouse-migrations :`, '\x1b[0m', message);
+    console.log(COLORS.CYAN, `clickhouse-migrations :`, COLORS.RESET, message);
   } else {
-    console.error('\x1b[36m', `clickhouse-migrations :`, '\x1b[31m', `Error: ${message}`, error ? `\n\n ${error}` : '');
+    console.error(
+      COLORS.CYAN,
+      `clickhouse-migrations :`,
+      COLORS.RED,
+      `Error: ${message}`,
+      error ? `\n\n ${error}` : '',
+    );
   }
 };
 
@@ -58,80 +84,84 @@ const connect = (
   url: string,
   username: string,
   password: string,
-  db_name?: string,
+  dbName?: string,
   timeout?: string,
-  ca_cert?: string,
+  caCert?: string,
   cert?: string,
   key?: string,
 ): ClickHouseClient => {
-  const db_params: ClickHouseClientConfigOptions = {
+  const dbParams: ClickHouseClientConfigOptions = {
     url,
     username,
     password,
     application: 'clickhouse-migrations',
   };
 
-  if (db_name) {
-    db_params.database = db_name;
+  if (dbName) {
+    dbParams.database = dbName;
   }
 
   if (timeout) {
-    db_params.request_timeout = Number(timeout);
+    const timeoutMs = Number(timeout);
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+      log('error', `Invalid timeout value: ${timeout}. Must be a positive number in milliseconds.`);
+      process.exit(1);
+    }
+    dbParams.request_timeout = timeoutMs;
   }
 
-  if (ca_cert) {
+  if (caCert) {
     try {
       if (cert && key) {
-        db_params.tls = {
-          ca_cert: fs.readFileSync(ca_cert),
+        dbParams.tls = {
+          ca_cert: fs.readFileSync(caCert),
           cert: fs.readFileSync(cert),
           key: fs.readFileSync(key),
         };
       } else {
-        db_params.tls = {
-          ca_cert: fs.readFileSync(ca_cert),
+        dbParams.tls = {
+          ca_cert: fs.readFileSync(caCert),
         };
       }
     } catch (e: unknown) {
       log(
         'error',
         'Failed to read CA certificate file for TLS connection.',
-        e instanceof Error ? e.message : String(e),
+        isQueryError(e) ? e.message : e instanceof Error ? e.message : String(e),
       );
       process.exit(1);
     }
   }
-  return createClient(db_params);
+  return createClient(dbParams);
 };
 
-const create_db = async (
+const createDb = async (
   host: string,
   username: string,
   password: string,
-  db_name: string,
-  db_engine?: string,
+  dbName: string,
+  dbEngine?: string,
   timeout?: string,
-  ca_cert?: string,
+  caCert?: string,
   cert?: string,
   key?: string,
 ): Promise<void> => {
   // Don't specify database name when creating it - connect to default database
-  const client = connect(host, username, password, undefined, timeout, ca_cert, cert, key);
+  const client = connect(host, username, password, undefined, timeout, caCert, cert, key);
 
   try {
     await client.ping();
   } catch (e: unknown) {
-    log('error', `Failed to connect to ClickHouse`, (e as QueryError).message);
+    log('error', `Failed to connect to ClickHouse`, isQueryError(e) ? e.message : String(e));
     process.exit(1);
   }
 
-  // Validate db_name parameter to prevent SQL injection
+  // Validate dbName parameter to prevent SQL injection
   // Documentation: https://clickhouse.com/docs/en/sql-reference/syntax#identifiers
   // Valid database names: letters, numbers, underscores, max 255 chars, can't start with number
   // Examples: mydb, my_database, analytics_db
-  if (db_name) {
-    const validDbNamePattern = /^[a-zA-Z_][a-zA-Z0-9_]{0,254}$/;
-    if (!validDbNamePattern.test(db_name.trim())) {
+  if (dbName) {
+    if (!VALIDATION_PATTERNS.DB_NAME.test(dbName.trim())) {
       log(
         'error',
         `Invalid database name. Must start with a letter or underscore, contain only letters, numbers, and underscores, and be max 255 characters. See: https://clickhouse.com/docs/en/sql-reference/syntax#identifiers`,
@@ -141,7 +171,7 @@ const create_db = async (
   }
 
   // In open source ClickHouse - default DB engine is "Atomic", for Cloud - "Shared". If not set, appropriate default is used.
-  // Validate db_engine parameter to prevent SQL injection
+  // Validate dbEngine parameter to prevent SQL injection
   // Documentation: https://clickhouse.com/docs/en/sql-reference/statements/create/database
   // Valid format: [ON CLUSTER <cluster>] ENGINE=<engine> [COMMENT '<comment>']
   // Allowed engines: Atomic, Lazy, MySQL, MaterializedMySQL, PostgreSQL, MaterializedPostgreSQL, Replicated, SQLite
@@ -150,11 +180,10 @@ const create_db = async (
   //   - ON CLUSTER my_cluster ENGINE=Replicated
   //   - ENGINE=Atomic COMMENT 'Production database'
   //   - ON CLUSTER my_cluster ENGINE=Replicated COMMENT 'Replicated DB'
-  if (db_engine) {
+  if (dbEngine) {
     // Allow: ENGINE=<name> or ON CLUSTER <name> ENGINE=<name> or with COMMENT
     // Valid pattern: optional "ON CLUSTER <cluster>" followed by "ENGINE=<engine>" optionally followed by "COMMENT '<text>'"
-    const validPattern = /^(ON\s+CLUSTER\s+[\w.-]+\s+)?ENGINE\s*=\s*[\w()]+(\s+COMMENT\s+'[^']*')?$/i;
-    if (!validPattern.test(db_engine.trim())) {
+    if (!VALIDATION_PATTERNS.DB_ENGINE.test(dbEngine.trim())) {
       log(
         'error',
         `Invalid db-engine parameter. Must match pattern: [ON CLUSTER <name>] ENGINE=<engine> [COMMENT '<comment>']. See: https://clickhouse.com/docs/en/sql-reference/statements/create/database`,
@@ -166,28 +195,28 @@ const create_db = async (
   // Use parameterized query with Identifier type to safely escape database name
   // This prevents SQL injection even if validation is bypassed
   const baseQuery = 'CREATE DATABASE IF NOT EXISTS {name:Identifier}';
-  const q = db_engine ? `${baseQuery} ${db_engine}` : baseQuery;
+  const q = dbEngine ? `${baseQuery} ${dbEngine}` : baseQuery;
 
   try {
     await client.exec({
       query: q,
       query_params: {
-        name: db_name,
+        name: dbName,
       },
       clickhouse_settings: {
         wait_end_of_query: 1,
       },
     });
   } catch (e: unknown) {
-    log('error', `can't create the database ${db_name}.`, (e as QueryError).message);
+    log('error', `can't create the database ${dbName}.`, isQueryError(e) ? e.message : String(e));
     process.exit(1);
   }
 
   await client.close();
 };
 
-const init_migration_table = async (client: ClickHouseClient, table_engine: string = 'MergeTree'): Promise<void> => {
-  // Validate table_engine parameter to prevent SQL injection
+const initMigrationTable = async (client: ClickHouseClient, tableEngine: string = 'MergeTree'): Promise<void> => {
+  // Validate tableEngine parameter to prevent SQL injection
   // Documentation: https://clickhouse.com/docs/en/engines/table-engines/
   // Valid engines: MergeTree, ReplicatedMergeTree, ReplacingMergeTree, SummingMergeTree, etc.
   // Valid format: EngineName or EngineName('param1', 'param2')
@@ -195,12 +224,11 @@ const init_migration_table = async (client: ClickHouseClient, table_engine: stri
   //   - MergeTree
   //   - ReplicatedMergeTree('/clickhouse/tables/{database}/migrations', '{replica}')
   //   - ReplacingMergeTree(version_column)
-  if (table_engine) {
+  if (tableEngine) {
     // Allow: engine name with optional parameters in parentheses, including cluster macros
     // Pattern: word characters followed by optional parentheses with parameters
     // Allowed characters inside params: alphanumeric, underscore, slash, dot, dash, braces, comma, single quotes, spaces
-    const validEnginePattern = /^[\w]+(\([\w\s/._{}',-]*\))?$/;
-    if (!validEnginePattern.test(table_engine.trim())) {
+    if (!VALIDATION_PATTERNS.TABLE_ENGINE.test(tableEngine.trim())) {
       log(
         'error',
         `Invalid table-engine parameter. Must be a valid ClickHouse engine name, optionally with parameters in parentheses. Examples: MergeTree, ReplicatedMergeTree('/path', '{replica}'). See: https://clickhouse.com/docs/en/engines/table-engines/`,
@@ -216,7 +244,7 @@ const init_migration_table = async (client: ClickHouseClient, table_engine: stri
       migration_name String,
       applied_at DateTime DEFAULT now()
     )
-    ENGINE = ${table_engine}
+    ENGINE = ${tableEngine}
     ORDER BY tuple(applied_at)`;
 
   try {
@@ -227,17 +255,17 @@ const init_migration_table = async (client: ClickHouseClient, table_engine: stri
       },
     });
   } catch (e: unknown) {
-    log('error', `can't create the _migrations table.`, (e as QueryError).message);
+    log('error', `can't create the _migrations table.`, isQueryError(e) ? e.message : String(e));
     process.exit(1);
   }
 };
 
-const get_migrations = (migrations_home: string): { version: number; file: string }[] => {
+const getMigrations = (migrationsHome: string): { version: number; file: string }[] => {
   let files: string[] = [];
   try {
-    files = fs.readdirSync(migrations_home);
+    files = fs.readdirSync(migrationsHome);
   } catch (_: unknown) {
-    log('error', `no migration directory ${migrations_home}. Please create it.`);
+    log('error', `no migration directory ${migrationsHome}. Please create it.`);
     process.exit(1);
   }
 
@@ -254,7 +282,12 @@ const get_migrations = (migrations_home: string): { version: number; file: strin
     // Check if version is a valid non-negative integer
     // parseInt returns NaN for invalid input, and we need to ensure it's an integer
     // We allow leading zeros (e.g., 000_init.sql is valid and treated as version 0)
-    if (Number.isNaN(version) || version < 0 || !Number.isInteger(version) || !/^\d+$/.test(versionString)) {
+    if (
+      Number.isNaN(version) ||
+      version < 0 ||
+      !Number.isInteger(version) ||
+      !VALIDATION_PATTERNS.VERSION_STRING.test(versionString)
+    ) {
       log(
         'error',
         `a migration name should start from a non-negative integer, example: 0_init.sql or 1_init.sql. Please check, if the migration ${file} is named correctly`,
@@ -269,7 +302,7 @@ const get_migrations = (migrations_home: string): { version: number; file: strin
   });
 
   if (!migrations.length) {
-    log('error', `no migrations in the ${migrations_home} migrations directory`);
+    log('error', `no migrations in the ${migrationsHome} migrations directory`);
   }
 
   // Order by version.
@@ -290,149 +323,179 @@ const get_migrations = (migrations_home: string): { version: number; file: strin
   return migrations;
 };
 
-const apply_migrations = async (
+// Helper function to validate applied migrations exist and haven't been removed
+const validateAppliedMigrations = (
+  appliedMigrations: Map<number, MigrationsRowData>,
+  migrations: MigrationBase[],
+): void => {
+  appliedMigrations.forEach((appliedMigration, version) => {
+    const migrationExists = migrations.find((m) => m.version === version);
+    if (!migrationExists) {
+      log(
+        'error',
+        `a migration file shouldn't be removed after apply. Please, restore the migration ${appliedMigration.migration_name}.`,
+      );
+      process.exit(1);
+    }
+  });
+};
+
+// Helper function to execute migration queries
+const executeMigrationQueries = async (
+  client: ClickHouseClient,
+  queries: string[],
+  sets: Record<string, string>,
+  migrationFile: string,
+): Promise<void> => {
+  for (const query of queries) {
+    try {
+      await client.exec({
+        query: query,
+        clickhouse_settings: sets,
+      });
+    } catch (e: unknown) {
+      throw new Error(
+        `the migrations ${migrationFile} has an error. Please, fix it (be sure that already executed parts of the migration would not be run second time) and re-run migration script.\n\n${isQueryError(e) ? e.message : String(e)}`,
+      );
+    }
+  }
+};
+
+// Helper function to record migration in database
+const recordMigration = async (client: ClickHouseClient, migration: MigrationBase, checksum: string): Promise<void> => {
+  try {
+    await client.insert({
+      table: '_migrations',
+      values: [
+        {
+          version: migration.version,
+          checksum: checksum,
+          migration_name: migration.file,
+        },
+      ],
+      format: 'JSONEachRow',
+    });
+  } catch (e: unknown) {
+    log('error', `can't insert a data into the table _migrations.`, isQueryError(e) ? e.message : String(e));
+    process.exit(1);
+  }
+};
+
+const applyMigrations = async (
   client: ClickHouseClient,
   migrations: MigrationBase[],
-  migrations_home: string,
-  abort_divergent: boolean = true,
+  migrationsHome: string,
+  abortDivergent: boolean = true,
 ): Promise<void> => {
-  let migration_query_result: MigrationsRowData[] = [];
+  // Fetch applied migrations from database
+  let migrationQueryResult: MigrationsRowData[] = [];
   try {
     const resultSet = await client.query({
       query: `SELECT version, checksum, migration_name FROM _migrations ORDER BY version`,
       format: 'JSONEachRow',
     });
-    migration_query_result = await resultSet.json();
+    migrationQueryResult = await resultSet.json();
   } catch (e: unknown) {
-    log('error', `can't select data from the _migrations table.`, (e as QueryError).message);
+    log('error', `can't select data from the _migrations table.`, isQueryError(e) ? e.message : String(e));
     process.exit(1);
   }
 
-  const migrations_applied: MigrationsRowData[] = [];
-  migration_query_result.forEach((row: MigrationsRowData) => {
-    migrations_applied[row.version] = {
+  // Use Map instead of sparse array for better performance and semantics
+  const migrationsApplied = new Map<number, MigrationsRowData>();
+  migrationQueryResult.forEach((row: MigrationsRowData) => {
+    migrationsApplied.set(row.version, {
       version: row.version,
       checksum: row.checksum,
       migration_name: row.migration_name,
-    };
-
-    // Check if migration file was not removed after apply.
-    const migration_exist = migrations.find(({ version }) => version === row.version);
-    if (!migration_exist) {
-      log(
-        'error',
-        `a migration file shouldn't be removed after apply. Please, restore the migration ${row.migration_name}.`,
-      );
-      process.exit(1);
-    }
+    });
   });
 
-  let applied_migrations = '';
+  // Validate that applied migrations still exist in filesystem
+  validateAppliedMigrations(migrationsApplied, migrations);
+
+  const appliedMigrationsList: string[] = [];
 
   for (const migration of migrations) {
-    const content = fs.readFileSync(`${migrations_home}/${migration.file}`).toString();
+    const content = fs.readFileSync(`${migrationsHome}/${migration.file}`).toString();
     const checksum = crypto.createHash('md5').update(content).digest('hex');
 
-    if (migrations_applied[migration.version]) {
-      // Check if migration file was not changed after apply.
-      if (migrations_applied[migration.version].checksum !== checksum) {
-        if (abort_divergent) {
+    const appliedMigration = migrationsApplied.get(migration.version);
+
+    if (appliedMigration) {
+      // Check if migration file was not changed after apply
+      if (appliedMigration.checksum !== checksum) {
+        if (abortDivergent) {
           log(
             'error',
-            `a migration file should't be changed after apply. Please, restore content of the ${
-              migrations_applied[migration.version].migration_name
-            } migrations.`,
+            `a migration file should't be changed after apply. Please, restore content of the ${appliedMigration.migration_name} migrations.`,
           );
           process.exit(1);
         } else {
           log(
             'info',
-            `Warning: applied migration ${migrations_applied[migration.version].migration_name} has different checksum than the file on filesystem. Continuing due to --abort-divergent=false.`,
+            `Warning: applied migration ${appliedMigration.migration_name} has different checksum than the file on filesystem. Continuing due to --abort-divergent=false.`,
           );
         }
       }
 
-      // Skip if a migration is already applied.
+      // Skip if a migration is already applied
       continue;
     }
 
-    // Extract sql from the migration.
+    // Extract SQL from the migration
     const queries = sqlQueries(content);
     const sets = sqlSets(content);
 
-    for (const query of queries) {
-      try {
-        await client.exec({
-          query: query,
-          clickhouse_settings: sets,
-        });
-      } catch (e: unknown) {
-        if (applied_migrations) {
-          log('info', `The migration(s) ${applied_migrations} was successfully applied!`);
-        }
-
-        log(
-          'error',
-          `the migrations ${migration.file} has an error. Please, fix it (be sure that already executed parts of the migration would not be run second time) and re-run migration script.`,
-          (e as QueryError).message,
-        );
-        process.exit(1);
-      }
-    }
-
+    // Execute migration queries
     try {
-      await client.insert({
-        table: '_migrations',
-        values: [
-          {
-            version: migration.version,
-            checksum: checksum,
-            migration_name: migration.file,
-          },
-        ],
-        format: 'JSONEachRow',
-      });
+      await executeMigrationQueries(client, queries, sets, migration.file);
     } catch (e: unknown) {
-      log('error', `can't insert a data into the table _migrations.`, (e as QueryError).message);
+      if (appliedMigrationsList.length > 0) {
+        log('info', `The migration(s) ${appliedMigrationsList.join(', ')} was successfully applied!`);
+      }
+      log('error', e instanceof Error ? e.message : String(e));
       process.exit(1);
     }
 
-    applied_migrations = applied_migrations ? `${applied_migrations}, ${migration.file}` : migration.file;
+    // Record migration in database
+    await recordMigration(client, migration, checksum);
+
+    appliedMigrationsList.push(migration.file);
   }
 
-  if (applied_migrations) {
-    log('info', `The migration(s) ${applied_migrations} was successfully applied!`);
+  if (appliedMigrationsList.length > 0) {
+    log('info', `The migration(s) ${appliedMigrationsList.join(', ')} was successfully applied!`);
   } else {
     log('info', `No migrations to apply.`);
   }
 };
 
-const migration = async (
-  migrations_home: string,
+const runMigration = async (
+  migrationsHome: string,
   host: string,
   username: string,
   password: string,
-  db_name: string,
-  db_engine?: string,
-  table_engine?: string,
+  dbName: string,
+  dbEngine?: string,
+  tableEngine?: string,
   timeout?: string,
-  ca_cert?: string | undefined,
+  caCert?: string | undefined,
   cert?: string | undefined,
   key?: string | undefined,
-  abort_divergent: boolean = true,
-  create_database: boolean = true,
+  abortDivergent: boolean = true,
+  createDatabase: boolean = true,
 ): Promise<void> => {
-  const migrations = get_migrations(migrations_home);
+  const migrations = getMigrations(migrationsHome);
 
-  if (create_database) {
-    await create_db(host, username, password, db_name, db_engine, timeout, ca_cert, cert, key);
+  if (createDatabase) {
+    await createDb(host, username, password, dbName, dbEngine, timeout, caCert, cert, key);
   }
 
-  const client = connect(host, username, password, db_name, timeout, ca_cert, cert, key);
+  const client = connect(host, username, password, dbName, timeout, caCert, cert, key);
 
-  await init_migration_table(client, table_engine);
+  await initMigrationTable(client, tableEngine);
 
-  await apply_migrations(client, migrations, migrations_home, abort_divergent);
+  await applyMigrations(client, migrations, migrationsHome, abortDivergent);
 
   await client.close();
 };
@@ -481,7 +544,7 @@ const migrate = () => {
     .action(async (options: CliParameters) => {
       const abortDivergent = parseBoolean(options.abortDivergent, true);
       const createDatabase = parseBoolean(options.createDatabase, true);
-      await migration(
+      await runMigration(
         options.migrationsHome,
         options.host,
         options.user,
@@ -501,4 +564,4 @@ const migrate = () => {
   program.parse();
 };
 
-export { migrate, migration };
+export { migrate, runMigration, runMigration as migration };
