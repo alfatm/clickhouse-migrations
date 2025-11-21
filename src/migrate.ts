@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import { readFile, readdir } from 'node:fs/promises';
 import { type ClickHouseClient, type ClickHouseClientConfigOptions, createClient } from '@clickhouse/client';
 import { Command } from 'commander';
 import { sqlSets, sqlQueries } from './sql-parse';
@@ -91,12 +92,15 @@ const connect = (config: ConnectionConfig): ClickHouseClient => {
     dbParams.database = config.dbName;
   }
 
-  if (config.timeout) {
-    const timeoutMs = Number(config.timeout);
-    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
-      throw new Error(`Invalid timeout value: ${config.timeout}. Must be a positive number in milliseconds.`);
-    }
-    dbParams.request_timeout = timeoutMs;
+  const timeoutMs = config.timeout ? Number(config.timeout) : 30000;
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    throw new Error(`Invalid timeout value: ${config.timeout}. Must be a positive number in milliseconds.`);
+  }
+  dbParams.request_timeout = timeoutMs;
+
+  // Validate TLS configuration: cert and key must be provided together
+  if ((config.cert && !config.key) || (!config.cert && config.key)) {
+    throw new Error('Both --cert and --key must be provided together');
   }
 
   if (config.caCert) {
@@ -113,7 +117,7 @@ const connect = (config: ConnectionConfig): ClickHouseClient => {
         };
       }
     } catch (e: unknown) {
-      throw new Error(`Failed to read CA certificate file for TLS connection: ${getErrorMessage(e)}`);
+      throw new Error(`Failed to read TLS certificate files: ${getErrorMessage(e)}`);
     }
   }
   return createClient(dbParams);
@@ -201,10 +205,10 @@ const initMigrationTable = async (client: ClickHouseClient, tableEngine: string 
   }
 };
 
-const getMigrations = (migrationsHome: string): { version: number; file: string }[] => {
+const getMigrations = async (migrationsHome: string): Promise<{ version: number; file: string }[]> => {
   let files: string[] = [];
   try {
-    files = fs.readdirSync(migrationsHome);
+    files = await readdir(migrationsHome);
   } catch (_: unknown) {
     throw new Error(`No migration directory ${migrationsHome}. Please create it.`);
   }
@@ -345,7 +349,7 @@ const applyMigrations = async (
   const appliedMigrationsList: string[] = [];
 
   for (const migration of migrations) {
-    const content = fs.readFileSync(`${migrationsHome}/${migration.file}`).toString();
+    const content = await readFile(`${migrationsHome}/${migration.file}`, 'utf-8');
     const checksum = crypto.createHash('md5').update(content).digest('hex');
 
     const appliedMigration = migrationsApplied.get(migration.version);
@@ -391,7 +395,7 @@ const applyMigrations = async (
 };
 
 const runMigration = async (config: MigrationRunConfig): Promise<void> => {
-  const migrations = getMigrations(config.migrationsHome);
+  const migrations = await getMigrations(config.migrationsHome);
 
   if (config.createDatabase !== false) {
     await createDb({
