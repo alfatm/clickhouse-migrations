@@ -40,7 +40,7 @@ describe('Execution tests', () => {
   });
 
   it('Environment variables are provided, but no migration directory', async () => {
-    const result = await execute('node lib/cli.js migrate', { env: envVars });
+    const result = await execute('node lib/cli.js migrate', { env: { ...process.env, ...envVars } });
 
     expect(result.stderr).toBe(
       '\x1B[36m clickhouse-migrations : \x1B[31m Error: no migration directory /app/clickhouse/migrations. Please create it. \n',

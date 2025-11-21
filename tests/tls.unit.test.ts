@@ -51,8 +51,9 @@ describe('TLS Configuration Unit Tests', () => {
         'password',
         'analytics',
         'ENGINE=Atomic',
-        '30000',
-        caCertPath,
+        'MergeTree',  // table_engine
+        '30000',      // timeout
+        caCertPath,   // ca_cert
       );
 
       // Verify createClient was called with TLS configuration containing only CA cert
@@ -80,10 +81,11 @@ describe('TLS Configuration Unit Tests', () => {
         'password',
         'analytics',
         'ENGINE=Atomic',
-        '30000',
-        caCertPath,
-        clientCertPath,
-        clientKeyPath,
+        'MergeTree',   // table_engine
+        '30000',       // timeout
+        caCertPath,    // ca_cert
+        clientCertPath,  // cert
+        clientKeyPath,   // key
       );
 
       // Verify createClient was called with complete TLS configuration
@@ -113,10 +115,11 @@ describe('TLS Configuration Unit Tests', () => {
         'password',
         'analytics',
         'ON CLUSTER production ENGINE=Replicated',
-        '60000',
-        caCertPath,
-        clientCertPath,
-        clientKeyPath,
+        'MergeTree',     // table_engine
+        '60000',         // timeout
+        caCertPath,      // ca_cert
+        clientCertPath,  // cert
+        clientKeyPath,   // key
       );
 
       const calls = mockCreateClient.mock.calls as Array<[Record<string, unknown>]>;
@@ -157,10 +160,11 @@ describe('TLS Configuration Unit Tests', () => {
         'password',
         'analytics',
         'ENGINE=Atomic',
-        '30000',
-        caCertPath,
-        clientCertPath,
-        clientKeyPath,
+        'MergeTree',     // table_engine
+        '30000',         // timeout
+        caCertPath,      // ca_cert
+        clientCertPath,  // cert
+        clientKeyPath,   // key
       );
 
       const calls = mockCreateClient.mock.calls as Array<[Record<string, unknown>]>;
@@ -190,8 +194,9 @@ describe('TLS Configuration Unit Tests', () => {
         'password',
         'analytics',
         'ENGINE=Atomic',
-        '30000',
-        caCertPath,
+        'MergeTree',  // table_engine
+        '30000',      // timeout
+        caCertPath,   // ca_cert
       );
 
       // Should have exactly 2 calls: one for DB creation, one for migrations

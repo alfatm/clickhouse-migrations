@@ -28,7 +28,7 @@ describe('Duplicate version validation', () => {
       expect.anything(),
       expect.anything(),
       expect.anything(),
-      expect.stringContaining('Found duplicate migration versions'),
+      expect.stringContaining('Found duplicate migration version'),
       expect.anything(),
     );
 

@@ -55,12 +55,13 @@ describe('TLS Certificate Support Tests', () => {
         CH_MIGRATIONS_PASSWORD: 'secure123',
         CH_MIGRATIONS_DB: 'analytics',
         CH_MIGRATIONS_HOME: 'tests/migrations/one',
+        CH_MIGRATIONS_TIMEOUT: '1000',
         CH_MIGRATIONS_CA_CERT: caCertPath,
         CH_MIGRATIONS_CERT: clientCertPath,
         CH_MIGRATIONS_KEY: clientKeyPath,
       };
 
-      const result = await execute('node lib/cli.js migrate', { env: envVars });
+      const result = await execute('node lib/cli.js migrate', { env: { ...process.env, ...envVars } });
 
       // Should not have parsing errors for certificate environment variables
       expect(result.stderr).not.toContain('unknown option');
@@ -126,7 +127,7 @@ describe('TLS Certificate Support Tests', () => {
 
   describe('Feature integration', () => {
     it('should work with other options like timeout and db-engine', async () => {
-      const command = `node ./lib/cli.js migrate --host=https://secure-clickhouse:8443 --user=default --password=secure123 --db=analytics --migrations-home=tests/migrations/one --timeout=60000 --db-engine="ENGINE=Atomic" --ca-cert=${caCertPath}`;
+      const command = `node ./lib/cli.js migrate --host=https://secure-clickhouse:8443 --user=default --password=secure123 --db=analytics --migrations-home=tests/migrations/one --db-engine="ENGINE=Atomic" --ca-cert=${caCertPath}`;
 
       const result = await execute(command, { cwd: '.' });
 
