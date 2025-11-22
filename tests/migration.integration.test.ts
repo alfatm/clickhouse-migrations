@@ -72,7 +72,7 @@ describe('Migration tests', () => {
 
     expect(querySpy).toHaveBeenNthCalledWith(1, {
       format: 'JSONEachRow',
-      query: 'SELECT version, checksum, migration_name FROM _migrations ORDER BY version',
+      query: 'SELECT version, checksum, migration_name, applied_at FROM _migrations ORDER BY version',
     });
 
     expect(insertSpy).toHaveBeenNthCalledWith(1, {

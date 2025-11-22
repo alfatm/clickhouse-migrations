@@ -12,10 +12,14 @@ import type {
   ConnectionConfig,
   CreateDbConfig,
   MigrationRunConfig,
+  MigrationStatusConfig,
+  MigrationStatus,
 } from './types/cli';
 
 const COLORS = {
   CYAN: '\x1b[36m',
+  GREEN: '\x1b[32m',
+  YELLOW: '\x1b[33m',
   RED: '\x1b[31m',
   RESET: '\x1b[0m',
 } as const;
@@ -321,7 +325,7 @@ const getAppliedMigrations = async (client: ClickHouseClient): Promise<Map<numbe
   let migrationQueryResult: MigrationsRowData[] = [];
   try {
     const resultSet = await client.query({
-      query: `SELECT version, checksum, migration_name FROM ${MIGRATIONS_TABLE} ORDER BY version`,
+      query: `SELECT version, checksum, migration_name, applied_at FROM ${MIGRATIONS_TABLE} ORDER BY version`,
       format: 'JSONEachRow',
     });
     migrationQueryResult = await resultSet.json();
@@ -336,6 +340,7 @@ const getAppliedMigrations = async (client: ClickHouseClient): Promise<Map<numbe
       version: row.version,
       checksum: row.checksum,
       migration_name: row.migration_name,
+      applied_at: row.applied_at,
     });
   });
 
@@ -434,6 +439,93 @@ const runMigration = async (config: MigrationRunConfig): Promise<void> => {
   await client.close();
 };
 
+const getMigrationStatus = async (config: MigrationStatusConfig): Promise<MigrationStatus[]> => {
+  const migrations = await getMigrations(config.migrationsHome);
+
+  const client = connect({
+    host: config.host,
+    username: config.username,
+    password: config.password,
+    dbName: config.dbName,
+    timeout: config.timeout,
+    caCert: config.caCert,
+    cert: config.cert,
+    key: config.key,
+  });
+
+  // Check if migrations table exists
+  let migrationsApplied: Map<number, MigrationsRowData>;
+  try {
+    await initMigrationTable(client, config.tableEngine);
+    migrationsApplied = await getAppliedMigrations(client);
+  } catch (e: unknown) {
+    await client.close();
+    throw new Error(`Failed to access migrations table: ${getErrorMessage(e)}`);
+  }
+
+  await client.close();
+
+  // Build status array by combining migrations from filesystem and database
+  const statusList: MigrationStatus[] = [];
+
+  for (const migration of migrations) {
+    const content = await readFile(`${config.migrationsHome}/${migration.file}`, 'utf-8');
+    const checksum = crypto.createHash('md5').update(content).digest('hex');
+    const appliedMigration = migrationsApplied.get(migration.version);
+
+    if (appliedMigration) {
+      statusList.push({
+        version: migration.version,
+        file: migration.file,
+        applied: true,
+        appliedAt: appliedMigration.applied_at,
+        checksum: appliedMigration.checksum,
+        checksumMatch: appliedMigration.checksum === checksum,
+      });
+    } else {
+      statusList.push({
+        version: migration.version,
+        file: migration.file,
+        applied: false,
+      });
+    }
+  }
+
+  return statusList;
+};
+
+const displayMigrationStatus = (statusList: MigrationStatus[]): void => {
+  const appliedCount = statusList.filter((s) => s.applied).length;
+  const pendingCount = statusList.filter((s) => !s.applied).length;
+  const divergentCount = statusList.filter((s) => s.applied && s.checksumMatch === false).length;
+
+  log('info', `Migration Status: ${appliedCount} applied, ${pendingCount} pending`);
+
+  if (divergentCount > 0) {
+    console.log(
+      COLORS.YELLOW,
+      `  Warning: ${divergentCount} applied migration(s) have checksum mismatches`,
+      COLORS.RESET,
+    );
+  }
+
+  console.log();
+
+  statusList.forEach((status) => {
+    if (status.applied) {
+      const statusSymbol = status.checksumMatch === false ? COLORS.YELLOW + '⚠ ' : COLORS.GREEN + '✓ ';
+      const checksumWarning = status.checksumMatch === false ? COLORS.YELLOW + ' (checksum mismatch)' : '';
+      console.log(
+        `${statusSymbol}${COLORS.RESET}[${status.version}] ${status.file} - applied at ${status.appliedAt}${checksumWarning}${COLORS.RESET}`,
+      );
+    } else {
+      console.log(`${COLORS.CYAN}○${COLORS.RESET} [${status.version}] ${status.file} - pending`);
+    }
+  });
+
+  console.log();
+};
+
 const migrate = () => {
   const program = new Command();
 
@@ -498,7 +590,49 @@ const migrate = () => {
       }
     });
 
+  program
+    .command('status')
+    .description('Show migration status.')
+    .requiredOption('--host <name>', 'Clickhouse hostname (ex: http://clickhouse:8123)', process.env.CH_MIGRATIONS_HOST)
+    .requiredOption('--user <name>', 'Username', process.env.CH_MIGRATIONS_USER)
+    .requiredOption('--password <password>', 'Password', process.env.CH_MIGRATIONS_PASSWORD)
+    .requiredOption('--db <name>', 'Database name', process.env.CH_MIGRATIONS_DB)
+    .requiredOption('--migrations-home <dir>', "Migrations' directory", process.env.CH_MIGRATIONS_HOME)
+    .option(
+      '--table-engine <value>',
+      'Engine for the _migrations table (default: "MergeTree")',
+      process.env.CH_MIGRATIONS_TABLE_ENGINE,
+    )
+    .option(
+      '--timeout <value>',
+      'Client request timeout (milliseconds, default value 30000)',
+      process.env.CH_MIGRATIONS_TIMEOUT,
+    )
+    .option('--ca-cert <path>', 'CA certificate file path', process.env.CH_MIGRATIONS_CA_CERT)
+    .option('--cert <path>', 'Client certificate file path', process.env.CH_MIGRATIONS_CERT)
+    .option('--key <path>', 'Client key file path', process.env.CH_MIGRATIONS_KEY)
+    .action(async (options: CliParameters) => {
+      try {
+        const statusList = await getMigrationStatus({
+          migrationsHome: options.migrationsHome,
+          host: options.host,
+          username: options.user,
+          password: options.password,
+          dbName: options.db,
+          tableEngine: options.tableEngine,
+          timeout: options.timeout,
+          caCert: options.caCert,
+          cert: options.cert,
+          key: options.key,
+        });
+        displayMigrationStatus(statusList);
+      } catch (e: unknown) {
+        log('error', e instanceof Error ? e.message : String(e));
+        process.exit(1);
+      }
+    });
+
   program.parse();
 };
 
-export { migrate, runMigration };
+export { migrate, runMigration, getMigrationStatus };

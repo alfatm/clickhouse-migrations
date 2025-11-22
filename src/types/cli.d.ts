@@ -9,6 +9,7 @@ export type MigrationsRowData = {
   version: number;
   checksum: string;
   migration_name: string;
+  applied_at?: string;
 };
 
 export type CliParameters = {
@@ -58,3 +59,18 @@ export type MigrationRunConfig = {
   abortDivergent?: boolean;
   createDatabase?: boolean;
 } & ConnectionConfig;
+
+export type MigrationStatusConfig = {
+  migrationsHome: string;
+  dbName: string;
+  tableEngine?: string;
+} & ConnectionConfig;
+
+export type MigrationStatus = {
+  version: number;
+  file: string;
+  applied: boolean;
+  appliedAt?: string;
+  checksum?: string;
+  checksumMatch?: boolean;
+};

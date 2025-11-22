@@ -174,6 +174,31 @@ clickhouse-migrations migrate \
   --migrations-home=./db/migrations
 ```
 
+### Check Migration Status
+
+View which migrations have been applied and which are pending:
+
+```sh
+clickhouse-migrations status \
+  --host=http://localhost:8123 \
+  --user=default \
+  --password='' \
+  --db=analytics \
+  --migrations-home=./db/migrations
+```
+
+Example output:
+
+```
+clickhouse-migrations : Migration Status: 3 applied, 2 pending
+
+✓ [1] 1_init.sql - applied at 2025-01-20 10:30:45
+✓ [2] 2_add_users_table.sql - applied at 2025-01-20 10:30:46
+✓ [3] 3_add_indexes.sql - applied at 2025-01-20 10:30:47
+○ [4] 4_add_events_table.sql - pending
+○ [5] 5_add_materialized_views.sql - pending
+```
+
 ### Production with Environment Variables
 
 Create a `.env` file:
@@ -275,13 +300,25 @@ clickhouse-migrations migrate \
 
 ## CLI Reference
 
-### Command
+### Commands
+
+#### migrate
+
+Apply pending migrations.
 
 ```
 clickhouse-migrations migrate [options]
 ```
 
-### Required Options
+#### status
+
+Show the current migration status (which migrations are applied, which are pending).
+
+```
+clickhouse-migrations status [options]
+```
+
+### Required Options (for both migrate and status)
 
 | Option              | Environment Variable     | Description           | Example                 |
 | ------------------- | ------------------------ | --------------------- | ----------------------- |
@@ -293,16 +330,16 @@ clickhouse-migrations migrate [options]
 
 ### Optional Options
 
-| Option              | Environment Variable            | Default         | Description                |
-| ------------------- | ------------------------------- | --------------- | -------------------------- |
-| `--db-engine`       | `CH_MIGRATIONS_DB_ENGINE`       | `ENGINE=Atomic` | Database engine clause     |
-| `--table-engine`    | `CH_MIGRATIONS_TABLE_ENGINE`    | `MergeTree`     | Migration table engine     |
-| `--timeout`         | `CH_MIGRATIONS_TIMEOUT`         | `30000`         | Request timeout (ms)       |
-| `--ca-cert`         | `CH_MIGRATIONS_CA_CERT`         | -               | CA certificate path        |
-| `--cert`            | `CH_MIGRATIONS_CERT`            | -               | Client certificate path    |
-| `--key`             | `CH_MIGRATIONS_KEY`             | -               | Client key path            |
-| `--abort-divergent` | `CH_MIGRATIONS_ABORT_DIVERGENT` | `true`          | Abort on checksum mismatch |
-| `--create-database` | `CH_MIGRATIONS_CREATE_DATABASE` | `true`          | Auto-create database       |
+| Option              | Environment Variable            | Default         | Commands       | Description                |
+| ------------------- | ------------------------------- | --------------- | -------------- | -------------------------- |
+| `--db-engine`       | `CH_MIGRATIONS_DB_ENGINE`       | `ENGINE=Atomic` | migrate        | Database engine clause     |
+| `--table-engine`    | `CH_MIGRATIONS_TABLE_ENGINE`    | `MergeTree`     | migrate,status | Migration table engine     |
+| `--timeout`         | `CH_MIGRATIONS_TIMEOUT`         | `30000`         | migrate,status | Request timeout (ms)       |
+| `--ca-cert`         | `CH_MIGRATIONS_CA_CERT`         | -               | migrate,status | CA certificate path        |
+| `--cert`            | `CH_MIGRATIONS_CERT`            | -               | migrate,status | Client certificate path    |
+| `--key`             | `CH_MIGRATIONS_KEY`             | -               | migrate,status | Client key path            |
+| `--abort-divergent` | `CH_MIGRATIONS_ABORT_DIVERGENT` | `true`          | migrate        | Abort on checksum mismatch |
+| `--create-database` | `CH_MIGRATIONS_CREATE_DATABASE` | `true`          | migrate        | Auto-create database       |
 
 ### Exit Codes
 
