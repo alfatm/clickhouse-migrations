@@ -217,6 +217,79 @@ Then run:
 ```sh
 clickhouse-migrations migrate
 ```
+
+### Using DSN (Data Source Name)
+
+You can use a single DSN string to specify connection parameters:
+
+```sh
+clickhouse-migrations migrate \
+  --dsn="clickhouse://user:password@localhost:8123/mydb" \
+  --migrations-home=./migrations
+```
+
+DSN format:
+```
+clickhouse://[user[:password]@]host[:port][/database][?setting1=value1&setting2=value2]
+```
+
+**Query parameters** in the DSN are passed as ClickHouse settings (equivalent to `SET` statements). This is useful for applying global settings to all migrations.
+
+You can also use `http://` or `https://` schemes directly:
+
+```sh
+clickhouse-migrations migrate \
+  --dsn="https://user:password@secure.clickhouse.com:8443/production" \
+  --migrations-home=./migrations
+```
+
+**Environment variable:**
+```env
+CH_MIGRATIONS_DSN=clickhouse://user:password@localhost:8123/mydb
+CH_MIGRATIONS_HOME=/app/migrations
+```
+
+**Individual parameters override DSN:**
+
+If you specify both DSN and individual parameters, the individual parameters take precedence:
+
+```sh
+# DSN provides base configuration
+clickhouse-migrations migrate \
+  --dsn="clickhouse://user:password@localhost:8123/dev_db" \
+  --db=production_db \
+  --migrations-home=./migrations
+# Will connect to production_db instead of dev_db
+```
+
+This is useful for:
+- Using DSN from environment for base config
+- Overriding specific values for different environments
+- Testing with different databases without changing DSN
+
+**Using ClickHouse settings in DSN:**
+
+You can pass ClickHouse settings via query parameters in the DSN:
+
+```sh
+# Enable experimental features for all migrations
+clickhouse-migrations migrate \
+  --dsn="clickhouse://user:password@localhost:8123/mydb?allow_experimental_json_type=1&allow_experimental_object_type=1" \
+  --migrations-home=./migrations
+```
+
+```sh
+# Increase memory limit for large data migrations
+clickhouse-migrations migrate \
+  --dsn="clickhouse://user:password@localhost:8123/mydb?max_memory_usage=10000000000" \
+  --migrations-home=./migrations
+```
+
+**Priority of settings:**
+- Settings in individual migration files (via `SET` statements) override DSN settings
+- DSN settings apply to all migrations globally
+- This allows you to set defaults via DSN and override them per-migration when needed
+
 ### Clustered ClickHouse Setup
 
 For replicated environments:
@@ -318,15 +391,20 @@ Show the current migration status (which migrations are applied, which are pendi
 clickhouse-migrations status [options]
 ```
 
-### Required Options (for both migrate and status)
+### Connection Options
 
-| Option              | Environment Variable     | Description           | Example                 |
-| ------------------- | ------------------------ | --------------------- | ----------------------- |
-| `--host`            | `CH_MIGRATIONS_HOST`     | ClickHouse server URL | `http://localhost:8123` |
-| `--user`            | `CH_MIGRATIONS_USER`     | Username              | `default`               |
-| `--password`        | `CH_MIGRATIONS_PASSWORD` | Password              | `mypassword`            |
-| `--db`              | `CH_MIGRATIONS_DB`       | Database name         | `analytics`             |
-| `--migrations-home` | `CH_MIGRATIONS_HOME`     | Migrations directory  | `./migrations`          |
+You can specify connection parameters either via DSN or individual options:
+
+| Option              | Environment Variable     | Description                              | Example                                  |
+| ------------------- | ------------------------ | ---------------------------------------- | ---------------------------------------- |
+| `--dsn`             | `CH_MIGRATIONS_DSN`      | Connection DSN (alternative to below)    | `clickhouse://user:pass@host:8123/db`   |
+| `--host`            | `CH_MIGRATIONS_HOST`     | ClickHouse server URL                    | `http://localhost:8123`                  |
+| `--user`            | `CH_MIGRATIONS_USER`     | Username                                 | `default`                                |
+| `--password`        | `CH_MIGRATIONS_PASSWORD` | Password                                 | `mypassword`                             |
+| `--db`              | `CH_MIGRATIONS_DB`       | Database name                            | `analytics`                              |
+| `--migrations-home` | `CH_MIGRATIONS_HOME`     | Migrations directory (required)          | `./migrations`                           |
+
+**Note:** When using `--dsn`, individual connection options (`--host`, `--user`, `--password`, `--db`) will override corresponding values from the DSN.
 
 ### Optional Options
 

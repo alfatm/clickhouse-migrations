@@ -14,6 +14,7 @@ export type MigrationsRowData = {
 
 export type CliParameters = {
   migrationsHome: string;
+  dsn?: string;
   host: string;
   user: string;
   password: string;
@@ -58,6 +59,7 @@ export type MigrationRunConfig = {
   tableEngine?: string;
   abortDivergent?: boolean;
   createDatabase?: boolean;
+  settings?: Record<string, string>;
 } & ConnectionConfig;
 
 export type MigrationStatusConfig = {

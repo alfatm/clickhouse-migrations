@@ -4,6 +4,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import { type ClickHouseClient, type ClickHouseClientConfigOptions, createClient } from '@clickhouse/client';
 import { Command } from 'commander';
 import { sqlSets, sqlQueries } from './sql-parse';
+import { mergeConnectionConfig } from './dsn-parser';
 import type {
   MigrationBase,
   MigrationsRowData,
@@ -352,6 +353,7 @@ const applyMigrations = async (
   migrations: MigrationBase[],
   migrationsHome: string,
   abortDivergent: boolean = true,
+  globalSettings: Record<string, string> = {},
 ): Promise<void> => {
   const migrationsApplied = await getAppliedMigrations(client);
   validateAppliedMigrations(migrationsApplied, migrations);
@@ -383,8 +385,12 @@ const applyMigrations = async (
     const queries = sqlQueries(content);
     const sets = sqlSets(content);
 
+    // Merge global settings from DSN with file-specific settings
+    // File-specific settings override global settings
+    const mergedSettings = { ...globalSettings, ...sets };
+
     try {
-      await executeMigrationQueries(client, queries, sets, migration.file);
+      await executeMigrationQueries(client, queries, mergedSettings, migration.file);
     } catch (e: unknown) {
       if (appliedMigrationsList.length > 0) {
         log('info', `The migration(s) ${appliedMigrationsList.join(', ')} was successfully applied!`);
@@ -434,7 +440,13 @@ const runMigration = async (config: MigrationRunConfig): Promise<void> => {
 
   await initMigrationTable(client, config.tableEngine);
 
-  await applyMigrations(client, migrations, config.migrationsHome, config.abortDivergent ?? true);
+  await applyMigrations(
+    client,
+    migrations,
+    config.migrationsHome,
+    config.abortDivergent ?? true,
+    config.settings || {},
+  );
 
   await client.close();
 };
@@ -534,10 +546,15 @@ const migrate = () => {
   program
     .command('migrate')
     .description('Apply migrations.')
-    .requiredOption('--host <name>', 'Clickhouse hostname (ex: http://clickhouse:8123)', process.env.CH_MIGRATIONS_HOST)
-    .requiredOption('--user <name>', 'Username', process.env.CH_MIGRATIONS_USER)
-    .requiredOption('--password <password>', 'Password', process.env.CH_MIGRATIONS_PASSWORD)
-    .requiredOption('--db <name>', 'Database name', process.env.CH_MIGRATIONS_DB)
+    .option(
+      '--dsn <dsn>',
+      'Connection DSN (ex: clickhouse://user:pass@localhost:8123/db)',
+      process.env.CH_MIGRATIONS_DSN,
+    )
+    .option('--host <name>', 'Clickhouse hostname (ex: http://clickhouse:8123)', process.env.CH_MIGRATIONS_HOST)
+    .option('--user <name>', 'Username', process.env.CH_MIGRATIONS_USER)
+    .option('--password <password>', 'Password', process.env.CH_MIGRATIONS_PASSWORD)
+    .option('--db <name>', 'Database name', process.env.CH_MIGRATIONS_DB)
     .requiredOption('--migrations-home <dir>', "Migrations' directory", process.env.CH_MIGRATIONS_HOME)
     .option(
       '--db-engine <value>',
@@ -569,12 +586,36 @@ const migrate = () => {
     )
     .action(async (options: CliParameters) => {
       try {
-        await runMigration({
-          migrationsHome: options.migrationsHome,
+        // Merge DSN with explicit options (explicit options override DSN)
+        const merged = mergeConnectionConfig(options.dsn, {
           host: options.host,
           username: options.user,
           password: options.password,
-          dbName: options.db,
+          database: options.db,
+        });
+
+        // Validate required parameters after merge (allow empty strings, but not undefined)
+        if (merged.host === undefined) {
+          throw new Error('Host is required. Provide via --dsn, --host, or CH_MIGRATIONS_HOST/CH_MIGRATIONS_DSN');
+        }
+        if (merged.username === undefined) {
+          throw new Error('Username is required. Provide via --dsn, --user, or CH_MIGRATIONS_USER/CH_MIGRATIONS_DSN');
+        }
+        if (merged.password === undefined) {
+          throw new Error(
+            'Password is required. Provide via --dsn, --password, or CH_MIGRATIONS_PASSWORD/CH_MIGRATIONS_DSN',
+          );
+        }
+        if (merged.database === undefined) {
+          throw new Error('Database is required. Provide via --dsn, --db, or CH_MIGRATIONS_DB/CH_MIGRATIONS_DSN');
+        }
+
+        await runMigration({
+          migrationsHome: options.migrationsHome,
+          host: merged.host,
+          username: merged.username,
+          password: merged.password,
+          dbName: merged.database,
           dbEngine: options.dbEngine,
           tableEngine: options.tableEngine,
           timeout: options.timeout,
@@ -583,6 +624,7 @@ const migrate = () => {
           key: options.key,
           abortDivergent: parseBoolean(options.abortDivergent, true),
           createDatabase: parseBoolean(options.createDatabase, true),
+          settings: merged.settings,
         });
       } catch (e: unknown) {
         log('error', e instanceof Error ? e.message : String(e));
@@ -593,10 +635,15 @@ const migrate = () => {
   program
     .command('status')
     .description('Show migration status.')
-    .requiredOption('--host <name>', 'Clickhouse hostname (ex: http://clickhouse:8123)', process.env.CH_MIGRATIONS_HOST)
-    .requiredOption('--user <name>', 'Username', process.env.CH_MIGRATIONS_USER)
-    .requiredOption('--password <password>', 'Password', process.env.CH_MIGRATIONS_PASSWORD)
-    .requiredOption('--db <name>', 'Database name', process.env.CH_MIGRATIONS_DB)
+    .option(
+      '--dsn <dsn>',
+      'Connection DSN (ex: clickhouse://user:pass@localhost:8123/db)',
+      process.env.CH_MIGRATIONS_DSN,
+    )
+    .option('--host <name>', 'Clickhouse hostname (ex: http://clickhouse:8123)', process.env.CH_MIGRATIONS_HOST)
+    .option('--user <name>', 'Username', process.env.CH_MIGRATIONS_USER)
+    .option('--password <password>', 'Password', process.env.CH_MIGRATIONS_PASSWORD)
+    .option('--db <name>', 'Database name', process.env.CH_MIGRATIONS_DB)
     .requiredOption('--migrations-home <dir>', "Migrations' directory", process.env.CH_MIGRATIONS_HOME)
     .option(
       '--table-engine <value>',
@@ -613,12 +660,36 @@ const migrate = () => {
     .option('--key <path>', 'Client key file path', process.env.CH_MIGRATIONS_KEY)
     .action(async (options: CliParameters) => {
       try {
-        const statusList = await getMigrationStatus({
-          migrationsHome: options.migrationsHome,
+        // Merge DSN with explicit options (explicit options override DSN)
+        const merged = mergeConnectionConfig(options.dsn, {
           host: options.host,
           username: options.user,
           password: options.password,
-          dbName: options.db,
+          database: options.db,
+        });
+
+        // Validate required parameters after merge (allow empty strings, but not undefined)
+        if (merged.host === undefined) {
+          throw new Error('Host is required. Provide via --dsn, --host, or CH_MIGRATIONS_HOST/CH_MIGRATIONS_DSN');
+        }
+        if (merged.username === undefined) {
+          throw new Error('Username is required. Provide via --dsn, --user, or CH_MIGRATIONS_USER/CH_MIGRATIONS_DSN');
+        }
+        if (merged.password === undefined) {
+          throw new Error(
+            'Password is required. Provide via --dsn, --password, or CH_MIGRATIONS_PASSWORD/CH_MIGRATIONS_DSN',
+          );
+        }
+        if (merged.database === undefined) {
+          throw new Error('Database is required. Provide via --dsn, --db, or CH_MIGRATIONS_DB/CH_MIGRATIONS_DSN');
+        }
+
+        const statusList = await getMigrationStatus({
+          migrationsHome: options.migrationsHome,
+          host: merged.host,
+          username: merged.username,
+          password: merged.password,
+          dbName: merged.database,
           tableEngine: options.tableEngine,
           timeout: options.timeout,
           caCert: options.caCert,
