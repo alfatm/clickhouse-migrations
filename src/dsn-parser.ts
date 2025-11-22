@@ -56,7 +56,19 @@ export const parseDSN = (dsn: string | undefined): ParsedDSN => {
       protocol = 'https';
     }
 
-    const port = url.port || (protocol === 'https' ? '8443' : '8123');
+    // Extract port: use explicit port from URL, or detect from original DSN
+    let port = url.port;
+    if (!port) {
+      // Check if port was explicitly specified in original DSN (but removed by URL parser for standard ports)
+      const portMatch = trimmedDsn.match(/:(\d+)(?:\/|$|\?)/);
+      if (portMatch && portMatch[1]) {
+        port = portMatch[1];
+      } else {
+        // Use default ClickHouse ports
+        port = protocol === 'https' ? '8443' : '8123';
+      }
+    }
+
     result.host = `${protocol}://${url.hostname}:${port}`;
 
     // Extract username
@@ -102,33 +114,67 @@ export const parseDSN = (dsn: string | undefined): ParsedDSN => {
 };
 
 /**
- * Merges connection configuration from multiple sources with proper precedence.
- * Priority (highest to lowest): explicit CLI options > DSN > defaults
+ * Sets up connection configuration from either DSN or separate parameters.
+ * Either use DSN or separate parameters (host, username, password, database), but not both.
  *
  * @param dsn - Optional DSN string
  * @param explicit - Explicitly provided options (CLI flags, config)
- * @returns Merged configuration
+ * @returns Connection configuration
+ * @throws Error if both DSN and separate connection parameters are provided
  */
-export const mergeConnectionConfig = (dsn: string | undefined, explicit: Partial<ParsedDSN>): ParsedDSN => {
-  // Parse DSN first (lowest priority)
+export const setupConnectionConfig = (dsn: string | undefined, explicit: Partial<ParsedDSN>): ParsedDSN => {
+  // Parse DSN first
   const dsnConfig = parseDSN(dsn);
 
-  // Merge with explicit options (highest priority)
-  // Use explicit value if defined (even if empty string), otherwise use DSN value
-  const result: ParsedDSN = {
-    host: explicit.host !== undefined ? explicit.host : dsnConfig.host,
-    username: explicit.username !== undefined ? explicit.username : dsnConfig.username,
-    password: explicit.password !== undefined ? explicit.password : dsnConfig.password,
-    database: explicit.database !== undefined ? explicit.database : dsnConfig.database,
-  };
+  // Check if DSN contains any connection parameters
+  const hasDsnParams =
+    dsnConfig.host !== undefined ||
+    dsnConfig.username !== undefined ||
+    dsnConfig.password !== undefined ||
+    dsnConfig.database !== undefined;
 
-  // Merge settings: DSN settings are used if no explicit settings provided
-  if (dsnConfig.settings || explicit.settings) {
-    result.settings = {
-      ...(dsnConfig.settings || {}),
-      ...(explicit.settings || {}),
+  // Check if explicit connection parameters are provided
+  const hasExplicitParams =
+    explicit.host !== undefined ||
+    explicit.username !== undefined ||
+    explicit.password !== undefined ||
+    explicit.database !== undefined;
+
+  // Throw error if both DSN and explicit connection parameters are provided
+  if (hasDsnParams && hasExplicitParams) {
+    throw new Error(
+      'Configuration conflict: provide either --dsn OR separate parameters (--host, --user, --password, --db), but not both',
+    );
+  }
+
+  // If DSN is provided, use it
+  if (hasDsnParams) {
+    return {
+      host: dsnConfig.host,
+      username: dsnConfig.username,
+      password: dsnConfig.password,
+      database: dsnConfig.database,
+      settings: dsnConfig.settings,
     };
   }
 
-  return result;
+  // If explicit parameters are provided, use them
+  if (hasExplicitParams) {
+    const result: ParsedDSN = {
+      host: explicit.host,
+      username: explicit.username,
+      password: explicit.password,
+      database: explicit.database,
+    };
+
+    // Add settings if provided
+    if (explicit.settings) {
+      result.settings = explicit.settings;
+    }
+
+    return result;
+  }
+
+  // No DSN and no explicit parameters - return empty config
+  return {};
 };

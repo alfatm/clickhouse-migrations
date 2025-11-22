@@ -4,7 +4,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import { type ClickHouseClient, type ClickHouseClientConfigOptions, createClient } from '@clickhouse/client';
 import { Command } from 'commander';
 import { sqlSets, sqlQueries } from './sql-parse';
-import { mergeConnectionConfig } from './dsn-parser';
+import { setupConnectionConfig } from './dsn-parser';
 import type {
   MigrationBase,
   MigrationsRowData,
@@ -30,9 +30,38 @@ const DEFAULT_TABLE_ENGINE = 'MergeTree';
 
 // Prevents SQL injection: validates ClickHouse identifiers and clauses
 const VALIDATION_PATTERNS = {
+  // Database name: must start with letter/underscore, contain only alphanumeric and underscore, max 255 chars
+  // See: https://clickhouse.com/docs/en/sql-reference/syntax#identifiers
   DB_NAME: /^[a-zA-Z_][a-zA-Z0-9_]{0,254}$/,
-  DB_ENGINE: /^(ON\s+CLUSTER\s+[\w.-]+\s+)?ENGINE\s*=\s*[\w()]+(\s+COMMENT\s+'[^']*')?$/i,
-  TABLE_ENGINE: /^[a-zA-Z]\w*(\([\w\s/._{}',-]+\))?$/,
+
+  // Database engine: supports replication and clustering
+  // Format: [ON CLUSTER <name>] ENGINE=<engine>[(params)] [COMMENT '<comment>']
+  // Examples:
+  //   - ENGINE = Atomic
+  //   - ENGINE = Replicated()
+  //   - ON CLUSTER '{cluster}' ENGINE = Replicated('/clickhouse/{installation}/{cluster}/databases/{database}', '{shard}', '{replica}')
+  // Pattern breakdown:
+  //   - (ON\s+CLUSTER\s+['\w{}.,-]+\s+)? - optional cluster clause with macros like '{cluster}'
+  //   - ENGINE\s*=\s*\w+ - engine name (Atomic, Replicated, etc.)
+  //   - (\s*\(\s*('...'(\s*,\s*'...')*\s*)?\))? - optional parameters: empty (), or with quoted strings
+  //   - (\s+COMMENT\s+'[^']*')? - optional comment
+  // See: https://clickhouse.com/docs/en/sql-reference/statements/create/database
+  DB_ENGINE: /^(ON\s+CLUSTER\s+['\w{}.,-]+\s+)?ENGINE\s*=\s*\w+(\s*\(\s*('[^']*'(\s*,\s*'[^']*')*\s*)?\))?(\s+COMMENT\s+'[^']*')?$/i,
+
+  // Table engine: supports replicated MergeTree family engines
+  // Format: EngineName[(params)]
+  // Examples:
+  //   - MergeTree
+  //   - ReplicatedMergeTree()
+  //   - ReplicatedMergeTree('/clickhouse/tables/{shard}/table_name', '{replica}')
+  //   - ReplicatedReplacingMergeTree('/clickhouse/tables/{shard}/{database}/{table}', '{replica}')
+  // Pattern breakdown:
+  //   - [a-zA-Z]\w* - engine name starting with letter
+  //   - (\s*\(\s*('...'(\s*,\s*'...')*\s*)?\))? - optional parameters: empty (), or with quoted strings
+  // See: https://clickhouse.com/docs/engines/table-engines/mergetree-family/replication
+  TABLE_ENGINE: /^[a-zA-Z]\w*(\s*\(\s*('[^']*'(\s*,\s*'[^']*')*\s*)?\))?$/,
+
+  // Migration version: must be non-negative integer
   VERSION_STRING: /^\d+$/,
 } as const;
 
@@ -50,6 +79,38 @@ const isQueryError = (error: unknown): error is QueryError => {
 
 const getErrorMessage = (error: unknown): string => {
   return isQueryError(error) ? error.message : String(error);
+};
+
+// Sanitizes error messages to prevent leaking sensitive information like passwords
+// Removes potential credentials from URLs and connection strings
+const sanitizeErrorMessage = (message: string): string => {
+  // Remove passwords from URLs (http://user:password@host -> http://user:[REDACTED]@host)
+  // Match protocol://user:password@host pattern
+  // This handles special characters by matching non-whitespace after the colon until @
+  let sanitized = message.replace(
+    /((?:https?|clickhouse):\/\/[^:/@\s]+:)([^@\s]+)(@)/gi,
+    '$1[REDACTED]$3'
+  );
+
+  // Remove passwords from connection strings (password=xxx, password='xxx', password: xxx)
+  sanitized = sanitized.replace(
+    /(password\s*[:=]\s*['"]?)([^'",\s}]+)(['"]?)/gi,
+    '$1[REDACTED]$3'
+  );
+
+  // Remove authorization headers (handles "Bearer token" and similar patterns)
+  sanitized = sanitized.replace(
+    /(authorization\s*[:=]\s*)(['"]?)([^\s'",}]+)(['"]?)/gi,
+    '$1$2[REDACTED]$4'
+  );
+
+  // Remove basic auth tokens
+  sanitized = sanitized.replace(
+    /(basic\s+)([a-zA-Z0-9+/]+=*)/gi,
+    '$1[REDACTED]'
+  );
+
+  return sanitized;
 };
 
 const log = (type: 'info' | 'error' = 'info', message: string, error?: string) => {
@@ -154,7 +215,7 @@ const createDb = async (config: CreateDbConfig): Promise<void> => {
   try {
     await client.ping();
   } catch (e: unknown) {
-    throw new Error(`Failed to connect to ClickHouse: ${getErrorMessage(e)}`);
+    throw new Error(`Failed to connect to ClickHouse: ${sanitizeErrorMessage(getErrorMessage(e))}`);
   }
 
   // SQL injection guard - See: https://clickhouse.com/docs/en/sql-reference/syntax#identifiers
@@ -171,7 +232,7 @@ const createDb = async (config: CreateDbConfig): Promise<void> => {
     validate(
       config.dbEngine,
       VALIDATION_PATTERNS.DB_ENGINE,
-      "Invalid db-engine parameter. Must match pattern: [ON CLUSTER <name>] ENGINE=<engine> [COMMENT '<comment>'].",
+      "Invalid db-engine parameter. Must match pattern: [ON CLUSTER <name>] ENGINE=<engine>[(params)] [COMMENT '<comment>']. Example: ON CLUSTER '{cluster}' ENGINE = Replicated('/clickhouse/{installation}/{cluster}/databases/{database}', '{shard}', '{replica}')",
     );
   }
 
@@ -190,7 +251,7 @@ const createDb = async (config: CreateDbConfig): Promise<void> => {
       },
     });
   } catch (e: unknown) {
-    throw new Error(`Can't create the database ${config.dbName}: ${getErrorMessage(e)}`);
+    throw new Error(`Can't create the database ${config.dbName}: ${sanitizeErrorMessage(getErrorMessage(e))}`);
   }
 
   await client.close();
@@ -202,7 +263,11 @@ const initMigrationTable = async (
 ): Promise<void> => {
   // SQL injection guard: validates MergeTree engine format
   // See: https://clickhouse.com/docs/en/engines/table-engines/
-  const validatedEngine = validate(tableEngine, VALIDATION_PATTERNS.TABLE_ENGINE, 'Invalid table engine');
+  const validatedEngine = validate(
+    tableEngine,
+    VALIDATION_PATTERNS.TABLE_ENGINE,
+    "Invalid table engine. Must match pattern: EngineName[(params)]. Example: ReplicatedMergeTree('/clickhouse/tables/{shard}/table_name', '{replica}')",
+  );
 
   const q = `CREATE TABLE IF NOT EXISTS ${MIGRATIONS_TABLE} (
       uid UUID DEFAULT generateUUIDv4(),
@@ -427,11 +492,12 @@ const applyMigrations = async (
 };
 
 const runMigration = async (config: MigrationRunConfig): Promise<void> => {
-  const conn = mergeConnectionConfig(config.dsn, {
+  const conn = setupConnectionConfig(config.dsn, {
     host: config.host,
     username: config.username,
     password: config.password,
     database: config.dbName,
+    settings: config.settings,
   });
 
   if (!conn.host) {
@@ -470,6 +536,14 @@ const runMigration = async (config: MigrationRunConfig): Promise<void> => {
     key: config.key,
   });
 
+  // Verify connection before proceeding
+  try {
+    await client.ping();
+  } catch (e: unknown) {
+    await client.close();
+    throw new Error(`Failed to connect to ClickHouse at ${host}: ${sanitizeErrorMessage(getErrorMessage(e))}`);
+  }
+
   await initMigrationTable(client, config.tableEngine || DEFAULT_TABLE_ENGINE);
 
   const settings = { ...conn.settings, ...(config.settings || {}) };
@@ -480,11 +554,12 @@ const runMigration = async (config: MigrationRunConfig): Promise<void> => {
 };
 
 const getMigrationStatus = async (config: MigrationStatusConfig): Promise<MigrationStatus[]> => {
-  const conn = mergeConnectionConfig(config.dsn, {
+  const conn = setupConnectionConfig(config.dsn, {
     host: config.host,
     username: config.username,
     password: config.password,
     database: config.dbName,
+    settings: config.settings,
   });
 
   if (!conn.host) {
@@ -509,6 +584,14 @@ const getMigrationStatus = async (config: MigrationStatusConfig): Promise<Migrat
     key: config.key,
   });
 
+  // Verify connection before proceeding
+  try {
+    await client.ping();
+  } catch (e: unknown) {
+    await client.close();
+    throw new Error(`Failed to connect to ClickHouse at ${host}: ${sanitizeErrorMessage(getErrorMessage(e))}`);
+  }
+
   // Check if migrations table exists
   let migrationsApplied: Map<number, MigrationsRowData>;
   try {
@@ -516,7 +599,7 @@ const getMigrationStatus = async (config: MigrationStatusConfig): Promise<Migrat
     migrationsApplied = await getAppliedMigrations(client);
   } catch (e: unknown) {
     await client.close();
-    throw new Error(`Failed to access migrations table: ${getErrorMessage(e)}`);
+    throw new Error(`Failed to access migrations table: ${sanitizeErrorMessage(getErrorMessage(e))}`);
   }
 
   await client.close();
@@ -602,12 +685,12 @@ const migrate = () => {
     .requiredOption('--migrations-home <dir>', "Migrations' directory", process.env.CH_MIGRATIONS_HOME)
     .option(
       '--db-engine <value>',
-      'ON CLUSTER and/or ENGINE clauses for database (default: "ENGINE=Atomic")',
+      'Database engine with optional cluster config (default: "ENGINE=Atomic"). Examples: "ENGINE = Replicated()" or "ON CLUSTER \'{cluster}\' ENGINE = Replicated(\'/clickhouse/{installation}/{cluster}/databases/{database}\', \'{shard}\', \'{replica}\')"',
       process.env.CH_MIGRATIONS_DB_ENGINE,
     )
     .option(
       '--table-engine <value>',
-      'Engine for the _migrations table (default: "MergeTree")',
+      'Engine for the _migrations table (default: "MergeTree"). Examples: "ReplicatedMergeTree()" or "ReplicatedMergeTree(\'/clickhouse/tables/{shard}/table_name\', \'{replica}\')"',
       process.env.CH_MIGRATIONS_TABLE_ENGINE,
     )
     .option(
@@ -667,7 +750,7 @@ const migrate = () => {
     .requiredOption('--migrations-home <dir>', "Migrations' directory", process.env.CH_MIGRATIONS_HOME)
     .option(
       '--table-engine <value>',
-      'Engine for the _migrations table (default: "MergeTree")',
+      'Engine for the _migrations table (default: "MergeTree"). Examples: "ReplicatedMergeTree()" or "ReplicatedMergeTree(\'/clickhouse/tables/{shard}/table_name\', \'{replica}\')"',
       process.env.CH_MIGRATIONS_TABLE_ENGINE,
     )
     .option(

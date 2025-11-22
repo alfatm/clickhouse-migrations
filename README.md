@@ -9,6 +9,7 @@
 
 - **Sequential Migration Management** - Apply migrations in order with version tracking
 - **Checksum Verification** - Detect modified migrations to prevent inconsistencies
+- **Security First** - Automatic password sanitization in error messages
 - **TLS/HTTPS Support** - Secure connections with custom certificates
 - **Clustered ClickHouse** - Support for ON CLUSTER and replicated tables
 - **Flexible Configuration** - CLI options or environment variables
@@ -25,6 +26,7 @@
 - [Programmatic Usage](#programmatic-usage)
 - [Best Practices](#best-practices)
 - [Philosophy: Forward-Only Migrations](#philosophy-forward-only-migrations)
+- [Security](#security)
 - [Troubleshooting](#troubleshooting)
 
 ## Installation
@@ -399,19 +401,19 @@ clickhouse-migrations status [options]
 
 ### Connection Options
 
-You can specify connection parameters either via DSN or individual options:
+You must specify connection parameters either via DSN **OR** individual options, but not both:
 
 | Option              | Environment Variable     | Required | Default   | Description                                                                                           | Example                               |
 | ------------------- | ------------------------ | -------- | --------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------- |
-| `--dsn`             | `CH_MIGRATIONS_DSN`      | No       | -         | Connection DSN (alternative to below)                                                                 | `clickhouse://user:pass@host:8123/db` |
-| `--host`            | `CH_MIGRATIONS_HOST`     | Yes      | -         | ClickHouse server URL                                                                                 | `http://localhost:8123`               |
+| `--dsn`             | `CH_MIGRATIONS_DSN`      | No*      | -         | Connection DSN (use **either** this **or** separate parameters)                                       | `clickhouse://user:pass@host:8123/db` |
+| `--host`            | `CH_MIGRATIONS_HOST`     | Yes*     | -         | ClickHouse server URL                                                                                 | `http://localhost:8123`               |
 | `--user`            | `CH_MIGRATIONS_USER`     | No       | (none)    | Username (uses [ClickHouse defaults](https://clickhouse.com/docs/operations/settings/settings-users)) | `default`                             |
 | `--password`        | `CH_MIGRATIONS_PASSWORD` | No       | (none)    | Password (uses [ClickHouse defaults](https://clickhouse.com/docs/operations/settings/settings-users)) | `mypassword`                          |
 | `--db`              | `CH_MIGRATIONS_DB`       | No       | (server default) | Database name (server uses `default` if not specified, see [HTTP interface](https://clickhouse.com/docs/interfaces/http)) | `analytics`                           |
 | `--migrations-home` | `CH_MIGRATIONS_HOME`     | Yes      | -         | Migrations directory                                                                                  | `./migrations`                        |
 
 **Notes:**
-- When using `--dsn`, individual connection options (`--host`, `--user`, `--password`, `--db`) will override corresponding values from the DSN.
+- **IMPORTANT:** You must provide **either** `--dsn` **OR** separate parameters (`--host`, `--user`, `--password`, `--db`), but **NOT BOTH**. Mixing DSN with individual connection parameters will result in an error.
 - If `--user` and `--password` are not provided, ClickHouse will use its default authentication mechanism (typically the `default` user with no password for local connections).
 - If `--db` is not specified, the ClickHouse server will automatically use the `default` database.
 
@@ -491,6 +493,21 @@ async function applyMigrationsWithDSN() {
 }
 
 applyMigrations();
+
+// IMPORTANT: Do NOT mix DSN with individual connection parameters
+// This will throw an error:
+async function invalidConfiguration() {
+  try {
+    await runMigration({
+      dsn: 'clickhouse://user:password@localhost:8123/myapp',
+      host: 'http://localhost:8123', // ERROR: Cannot use both DSN and separate parameters
+      migrationsHome: './migrations',
+    });
+  } catch (error) {
+    console.error('Configuration error:', error);
+    // Error: Configuration conflict: provide either --dsn OR separate parameters
+  }
+}
 ```
 
 ### TypeScript Types
@@ -498,14 +515,13 @@ applyMigrations();
 ```typescript
 import type { MigrationRunConfig } from 'clickhouse-migrations';
 
-// All configuration options
-const config: MigrationRunConfig = {
+// Configuration using separate parameters
+const configSeparate: MigrationRunConfig = {
   // Required
   host: 'http://localhost:8123',
   migrationsHome: './migrations',
 
   // Optional connection
-  dsn: 'clickhouse://user:pass@localhost:8123/db',  // Alternative to host/username/password/dbName
   username: 'default',         // Optional: uses ClickHouse server defaults if not provided
   password: 'mypassword',      // Optional: uses ClickHouse server defaults if not provided
   dbName: 'myapp',             // Optional: server uses 'default' database if not provided
@@ -524,6 +540,33 @@ const config: MigrationRunConfig = {
   caCert: './certs/ca.pem',
   cert: './certs/client.crt',
   key: './certs/client.key',
+};
+
+// Configuration using DSN
+const configDSN: MigrationRunConfig = {
+  // Required
+  dsn: 'clickhouse://user:pass@localhost:8123/db',
+  migrationsHome: './migrations',
+
+  // Optional settings
+  timeout: '30000',
+  dbEngine: 'ENGINE=Atomic',
+  tableEngine: 'MergeTree',
+  abortDivergent: true,
+  createDatabase: true,
+
+  // Optional TLS
+  caCert: './certs/ca.pem',
+  cert: './certs/client.crt',
+  key: './certs/client.key',
+};
+
+// IMPORTANT: Do NOT mix DSN with individual connection parameters
+// This configuration is INVALID and will throw an error:
+const invalidConfig: MigrationRunConfig = {
+  dsn: 'clickhouse://user:pass@localhost:8123/db',
+  host: 'http://localhost:8123', // ERROR: Cannot use both DSN and separate parameters
+  migrationsHome: './migrations',
 };
 ```
 
@@ -723,6 +766,28 @@ This approach:
 3. **Emergency**: Create a new migration that reverts changes, test it, then apply
 
 This is not a limitation - it's a design decision that leads to safer, more maintainable database evolution.
+
+## Security
+
+### Password Sanitization in Error Messages
+
+The tool automatically sanitizes sensitive information in error messages to prevent credential leaks. All connection errors and exceptions are processed to remove:
+
+- **URL passwords**: `http://user:password@host` → `http://user:[REDACTED]@host`
+- **Connection strings**: `password=secret` → `password=[REDACTED]`
+- **Authorization headers**: `Authorization: Bearer token` → `Authorization: [REDACTED]`
+- **Basic auth tokens**: `Basic dXNlcjpwYXNz` → `Basic [REDACTED]`
+
+This protection is automatic and requires no configuration. Error messages remain informative for debugging while keeping credentials secure.
+
+**Example:**
+
+```
+Before: Failed to connect to http://admin:MySecret123@localhost:8123
+After:  Failed to connect to http://admin:[REDACTED]@localhost:8123
+```
+
+**Note:** Passwords containing `@` symbols will be partially masked (up to the first `@`). For maximum security, use URL-encoded passwords or avoid `@` in credentials.
 
 ## Troubleshooting
 

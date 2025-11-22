@@ -69,6 +69,7 @@ export type MigrationStatusConfig = {
   dsn?: string;
   dbName?: string;
   tableEngine?: string;
+  settings?: Record<string, string>;
 } & ConnectionConfig;
 
 export type MigrationStatus = {
