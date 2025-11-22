@@ -15,10 +15,10 @@ export type MigrationsRowData = {
 export type CliParameters = {
   migrationsHome: string;
   dsn?: string;
-  host: string;
-  user: string;
-  password: string;
-  db: string;
+  host?: string;
+  user?: string;
+  password?: string;
+  db?: string;
   dbEngine?: string;
   tableEngine?: string;
   timeout?: string;
@@ -40,21 +40,23 @@ export type TlsConfig = {
 };
 
 export type ConnectionConfig = {
-  host: string;
-  username: string;
-  password: string;
+  host?: string;
+  username?: string;
+  password?: string;
   dbName?: string;
   timeout?: string;
 } & TlsConfig;
 
 export type CreateDbConfig = {
-  dbName: string;
+  host: string;
+  dbName?: string;
   dbEngine?: string;
-} & ConnectionConfig;
+} & Omit<ConnectionConfig, 'host'>;
 
 export type MigrationRunConfig = {
   migrationsHome: string;
-  dbName: string;
+  dsn?: string;
+  dbName?: string;
   dbEngine?: string;
   tableEngine?: string;
   abortDivergent?: boolean;
@@ -64,7 +66,8 @@ export type MigrationRunConfig = {
 
 export type MigrationStatusConfig = {
   migrationsHome: string;
-  dbName: string;
+  dsn?: string;
+  dbName?: string;
   tableEngine?: string;
 } & ConnectionConfig;
 

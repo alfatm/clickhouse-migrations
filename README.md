@@ -74,6 +74,12 @@ ORDER BY (user_id, timestamp);
 ### 3. Run migrations
 
 ```sh
+# Minimal example (uses ClickHouse default authentication)
+clickhouse-migrations migrate \
+  --host=http://localhost:8123 \
+  --migrations-home=./migrations
+
+# Or with explicit credentials
 clickhouse-migrations migrate \
   --host=http://localhost:8123 \
   --user=default \
@@ -395,16 +401,19 @@ clickhouse-migrations status [options]
 
 You can specify connection parameters either via DSN or individual options:
 
-| Option              | Environment Variable     | Description                              | Example                                  |
-| ------------------- | ------------------------ | ---------------------------------------- | ---------------------------------------- |
-| `--dsn`             | `CH_MIGRATIONS_DSN`      | Connection DSN (alternative to below)    | `clickhouse://user:pass@host:8123/db`   |
-| `--host`            | `CH_MIGRATIONS_HOST`     | ClickHouse server URL                    | `http://localhost:8123`                  |
-| `--user`            | `CH_MIGRATIONS_USER`     | Username                                 | `default`                                |
-| `--password`        | `CH_MIGRATIONS_PASSWORD` | Password                                 | `mypassword`                             |
-| `--db`              | `CH_MIGRATIONS_DB`       | Database name                            | `analytics`                              |
-| `--migrations-home` | `CH_MIGRATIONS_HOME`     | Migrations directory (required)          | `./migrations`                           |
+| Option              | Environment Variable     | Required | Default   | Description                                                                                           | Example                               |
+| ------------------- | ------------------------ | -------- | --------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| `--dsn`             | `CH_MIGRATIONS_DSN`      | No       | -         | Connection DSN (alternative to below)                                                                 | `clickhouse://user:pass@host:8123/db` |
+| `--host`            | `CH_MIGRATIONS_HOST`     | Yes      | -         | ClickHouse server URL                                                                                 | `http://localhost:8123`               |
+| `--user`            | `CH_MIGRATIONS_USER`     | No       | (none)    | Username (uses [ClickHouse defaults](https://clickhouse.com/docs/operations/settings/settings-users)) | `default`                             |
+| `--password`        | `CH_MIGRATIONS_PASSWORD` | No       | (none)    | Password (uses [ClickHouse defaults](https://clickhouse.com/docs/operations/settings/settings-users)) | `mypassword`                          |
+| `--db`              | `CH_MIGRATIONS_DB`       | No       | (server default) | Database name (server uses `default` if not specified, see [HTTP interface](https://clickhouse.com/docs/interfaces/http)) | `analytics`                           |
+| `--migrations-home` | `CH_MIGRATIONS_HOME`     | Yes      | -         | Migrations directory                                                                                  | `./migrations`                        |
 
-**Note:** When using `--dsn`, individual connection options (`--host`, `--user`, `--password`, `--db`) will override corresponding values from the DSN.
+**Notes:**
+- When using `--dsn`, individual connection options (`--host`, `--user`, `--password`, `--db`) will override corresponding values from the DSN.
+- If `--user` and `--password` are not provided, ClickHouse will use its default authentication mechanism (typically the `default` user with no password for local connections).
+- If `--db` is not specified, the ClickHouse server will automatically use the `default` database.
 
 ### Optional Options
 
@@ -433,17 +442,46 @@ import { runMigration } from 'clickhouse-migrations';
 
 async function applyMigrations() {
   try {
+    // Minimal configuration (uses ClickHouse defaults for authentication)
     await runMigration({
       host: 'http://localhost:8123',
-      username: 'default',
-      password: '',
-      dbName: 'myapp',
+      migrationsHome: './migrations',
+    });
+    console.log('Migrations applied successfully!');
+  } catch (error) {
+    console.error('Migration failed:', error);
+    process.exit(1);
+  }
+}
+
+// With explicit credentials and options
+async function applyMigrationsWithAuth() {
+  try {
+    await runMigration({
+      host: 'http://localhost:8123',
+      username: 'default',          // Optional: uses ClickHouse server defaults
+      password: 'mypassword',        // Optional: uses ClickHouse server defaults
+      dbName: 'myapp',               // Optional: server uses 'default' database if not provided
       migrationsHome: './migrations',
       // Optional parameters
       timeout: '30000',
       tableEngine: 'MergeTree',
       abortDivergent: true,
       createDatabase: true,
+    });
+    console.log('Migrations applied successfully!');
+  } catch (error) {
+    console.error('Migration failed:', error);
+    process.exit(1);
+  }
+}
+
+// Using DSN
+async function applyMigrationsWithDSN() {
+  try {
+    await runMigration({
+      dsn: 'clickhouse://user:password@localhost:8123/myapp',
+      migrationsHome: './migrations',
     });
     console.log('Migrations applied successfully!');
   } catch (error) {
@@ -460,18 +498,29 @@ applyMigrations();
 ```typescript
 import type { MigrationRunConfig } from 'clickhouse-migrations';
 
+// All configuration options
 const config: MigrationRunConfig = {
+  // Required
   host: 'http://localhost:8123',
-  username: 'default',
-  password: '',
-  dbName: 'myapp',
   migrationsHome: './migrations',
+
+  // Optional connection
+  dsn: 'clickhouse://user:pass@localhost:8123/db',  // Alternative to host/username/password/dbName
+  username: 'default',         // Optional: uses ClickHouse server defaults if not provided
+  password: 'mypassword',      // Optional: uses ClickHouse server defaults if not provided
+  dbName: 'myapp',             // Optional: server uses 'default' database if not provided
+
+  // Optional settings
   timeout: '30000',
   dbEngine: 'ENGINE=Atomic',
   tableEngine: 'MergeTree',
   abortDivergent: true,
   createDatabase: true,
-  // TLS options
+  settings: {                   // ClickHouse query settings
+    max_memory_usage: '10000000000',
+  },
+
+  // Optional TLS
   caCert: './certs/ca.pem',
   cert: './certs/client.crt',
   key: './certs/client.key',

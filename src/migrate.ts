@@ -26,6 +26,7 @@ const COLORS = {
 } as const;
 
 const MIGRATIONS_TABLE = '_migrations';
+const DEFAULT_TABLE_ENGINE = 'MergeTree';
 
 // Prevents SQL injection: validates ClickHouse identifiers and clauses
 const VALIDATION_PATTERNS = {
@@ -85,14 +86,24 @@ const parseBoolean = (value: unknown, defaultValue: boolean = true): boolean => 
   return !falsyValues.includes(str);
 };
 
-const connect = (config: ConnectionConfig): ClickHouseClient => {
+const connect = (config: ConnectionConfig & { host: string }): ClickHouseClient => {
   const dbParams: ClickHouseClientConfigOptions = {
     url: config.host,
-    username: config.username,
-    password: config.password,
     application: 'clickhouse-migrations',
   };
 
+  // Optional authentication - if not provided, uses ClickHouse server defaults
+  // See: https://clickhouse.com/docs/operations/settings/settings-users
+  if (config.username) {
+    dbParams.username = config.username;
+  }
+
+  if (config.password) {
+    dbParams.password = config.password;
+  }
+
+  // Optional database - if not provided, server defaults to 'default' database
+  // See: https://clickhouse.com/docs/interfaces/http
   if (config.dbName) {
     dbParams.database = config.dbName;
   }
@@ -147,11 +158,13 @@ const createDb = async (config: CreateDbConfig): Promise<void> => {
   }
 
   // SQL injection guard - See: https://clickhouse.com/docs/en/sql-reference/syntax#identifiers
-  validate(
-    config.dbName,
-    VALIDATION_PATTERNS.DB_NAME,
-    'Invalid database name. Must start with a letter or underscore, contain only letters, numbers, and underscores, and be max 255 characters.',
-  );
+  if (config.dbName) {
+    validate(
+      config.dbName,
+      VALIDATION_PATTERNS.DB_NAME,
+      'Invalid database name. Must start with a letter or underscore, contain only letters, numbers, and underscores, and be max 255 characters.',
+    );
+  }
 
   // SQL injection guard - See: https://clickhouse.com/docs/en/sql-reference/statements/create/database
   if (config.dbEngine) {
@@ -183,7 +196,10 @@ const createDb = async (config: CreateDbConfig): Promise<void> => {
   await client.close();
 };
 
-const initMigrationTable = async (client: ClickHouseClient, tableEngine: string = 'MergeTree'): Promise<void> => {
+const initMigrationTable = async (
+  client: ClickHouseClient,
+  tableEngine: string = DEFAULT_TABLE_ENGINE,
+): Promise<void> => {
   // SQL injection guard: validates MergeTree engine format
   // See: https://clickhouse.com/docs/en/engines/table-engines/
   const validatedEngine = validate(tableEngine, VALIDATION_PATTERNS.TABLE_ENGINE, 'Invalid table engine');
@@ -411,14 +427,30 @@ const applyMigrations = async (
 };
 
 const runMigration = async (config: MigrationRunConfig): Promise<void> => {
+  const conn = mergeConnectionConfig(config.dsn, {
+    host: config.host,
+    username: config.username,
+    password: config.password,
+    database: config.dbName,
+  });
+
+  if (!conn.host) {
+    throw new Error('Host is required. Provide via --dsn, --host, or CH_MIGRATIONS_HOST/CH_MIGRATIONS_DSN');
+  }
+
+  const host = conn.host;
+  const username = conn.username; // Optional: uses ClickHouse server defaults if not provided
+  const password = conn.password; // Optional: uses ClickHouse server defaults if not provided
+  const database = conn.database; // Optional: server defaults to 'default' database
+
   const migrations = await getMigrations(config.migrationsHome);
 
   if (config.createDatabase !== false) {
     await createDb({
-      host: config.host,
-      username: config.username,
-      password: config.password,
-      dbName: config.dbName,
+      host,
+      username,
+      password,
+      dbName: database,
       dbEngine: config.dbEngine,
       timeout: config.timeout,
       caCert: config.caCert,
@@ -428,37 +460,49 @@ const runMigration = async (config: MigrationRunConfig): Promise<void> => {
   }
 
   const client = connect({
-    host: config.host,
-    username: config.username,
-    password: config.password,
-    dbName: config.dbName,
+    host,
+    username,
+    password,
+    dbName: database,
     timeout: config.timeout,
     caCert: config.caCert,
     cert: config.cert,
     key: config.key,
   });
 
-  await initMigrationTable(client, config.tableEngine);
+  await initMigrationTable(client, config.tableEngine || DEFAULT_TABLE_ENGINE);
 
-  await applyMigrations(
-    client,
-    migrations,
-    config.migrationsHome,
-    config.abortDivergent ?? true,
-    config.settings || {},
-  );
+  const settings = { ...conn.settings, ...(config.settings || {}) };
+
+  await applyMigrations(client, migrations, config.migrationsHome, config.abortDivergent ?? true, settings);
 
   await client.close();
 };
 
 const getMigrationStatus = async (config: MigrationStatusConfig): Promise<MigrationStatus[]> => {
-  const migrations = await getMigrations(config.migrationsHome);
-
-  const client = connect({
+  const conn = mergeConnectionConfig(config.dsn, {
     host: config.host,
     username: config.username,
     password: config.password,
-    dbName: config.dbName,
+    database: config.dbName,
+  });
+
+  if (!conn.host) {
+    throw new Error('Host is required. Provide via --dsn, --host, or CH_MIGRATIONS_HOST/CH_MIGRATIONS_DSN');
+  }
+
+  const host = conn.host;
+  const username = conn.username; // Optional: uses ClickHouse server defaults if not provided
+  const password = conn.password; // Optional: uses ClickHouse server defaults if not provided
+  const database = conn.database; // Optional: server defaults to 'default' database
+
+  const migrations = await getMigrations(config.migrationsHome);
+
+  const client = connect({
+    host,
+    username,
+    password,
+    dbName: database,
     timeout: config.timeout,
     caCert: config.caCert,
     cert: config.cert,
@@ -468,7 +512,7 @@ const getMigrationStatus = async (config: MigrationStatusConfig): Promise<Migrat
   // Check if migrations table exists
   let migrationsApplied: Map<number, MigrationsRowData>;
   try {
-    await initMigrationTable(client, config.tableEngine);
+    await initMigrationTable(client, config.tableEngine || DEFAULT_TABLE_ENGINE);
     migrationsApplied = await getAppliedMigrations(client);
   } catch (e: unknown) {
     await client.close();
@@ -586,36 +630,13 @@ const migrate = () => {
     )
     .action(async (options: CliParameters) => {
       try {
-        // Merge DSN with explicit options (explicit options override DSN)
-        const merged = mergeConnectionConfig(options.dsn, {
+        await runMigration({
+          migrationsHome: options.migrationsHome,
+          dsn: options.dsn,
           host: options.host,
           username: options.user,
           password: options.password,
-          database: options.db,
-        });
-
-        // Validate required parameters after merge (allow empty strings, but not undefined)
-        if (merged.host === undefined) {
-          throw new Error('Host is required. Provide via --dsn, --host, or CH_MIGRATIONS_HOST/CH_MIGRATIONS_DSN');
-        }
-        if (merged.username === undefined) {
-          throw new Error('Username is required. Provide via --dsn, --user, or CH_MIGRATIONS_USER/CH_MIGRATIONS_DSN');
-        }
-        if (merged.password === undefined) {
-          throw new Error(
-            'Password is required. Provide via --dsn, --password, or CH_MIGRATIONS_PASSWORD/CH_MIGRATIONS_DSN',
-          );
-        }
-        if (merged.database === undefined) {
-          throw new Error('Database is required. Provide via --dsn, --db, or CH_MIGRATIONS_DB/CH_MIGRATIONS_DSN');
-        }
-
-        await runMigration({
-          migrationsHome: options.migrationsHome,
-          host: merged.host,
-          username: merged.username,
-          password: merged.password,
-          dbName: merged.database,
+          dbName: options.db,
           dbEngine: options.dbEngine,
           tableEngine: options.tableEngine,
           timeout: options.timeout,
@@ -624,7 +645,6 @@ const migrate = () => {
           key: options.key,
           abortDivergent: parseBoolean(options.abortDivergent, true),
           createDatabase: parseBoolean(options.createDatabase, true),
-          settings: merged.settings,
         });
       } catch (e: unknown) {
         log('error', e instanceof Error ? e.message : String(e));
@@ -660,36 +680,13 @@ const migrate = () => {
     .option('--key <path>', 'Client key file path', process.env.CH_MIGRATIONS_KEY)
     .action(async (options: CliParameters) => {
       try {
-        // Merge DSN with explicit options (explicit options override DSN)
-        const merged = mergeConnectionConfig(options.dsn, {
+        const statusList = await getMigrationStatus({
+          migrationsHome: options.migrationsHome,
+          dsn: options.dsn,
           host: options.host,
           username: options.user,
           password: options.password,
-          database: options.db,
-        });
-
-        // Validate required parameters after merge (allow empty strings, but not undefined)
-        if (merged.host === undefined) {
-          throw new Error('Host is required. Provide via --dsn, --host, or CH_MIGRATIONS_HOST/CH_MIGRATIONS_DSN');
-        }
-        if (merged.username === undefined) {
-          throw new Error('Username is required. Provide via --dsn, --user, or CH_MIGRATIONS_USER/CH_MIGRATIONS_DSN');
-        }
-        if (merged.password === undefined) {
-          throw new Error(
-            'Password is required. Provide via --dsn, --password, or CH_MIGRATIONS_PASSWORD/CH_MIGRATIONS_DSN',
-          );
-        }
-        if (merged.database === undefined) {
-          throw new Error('Database is required. Provide via --dsn, --db, or CH_MIGRATIONS_DB/CH_MIGRATIONS_DSN');
-        }
-
-        const statusList = await getMigrationStatus({
-          migrationsHome: options.migrationsHome,
-          host: merged.host,
-          username: merged.username,
-          password: merged.password,
-          dbName: merged.database,
+          dbName: options.db,
           tableEngine: options.tableEngine,
           timeout: options.timeout,
           caCert: options.caCert,
