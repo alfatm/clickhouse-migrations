@@ -1,5 +1,5 @@
-import { describe, it, expect } from '@jest/globals';
-import { runMigration, getMigrationStatus } from '../src/migrate';
+import { describe, expect, it } from '@jest/globals'
+import { getMigrationStatus, runMigration } from '../src/migrate'
 
 describe('Connection Error Handling', () => {
   describe('runMigration', () => {
@@ -11,8 +11,8 @@ describe('Connection Error Handling', () => {
           timeout: '5000',
           createDatabase: false,
         }),
-      ).rejects.toThrow();
-    }, 15000);
+      ).rejects.toThrow()
+    }, 15000)
 
     it('should throw error with wrong port', async () => {
       await expect(
@@ -22,8 +22,8 @@ describe('Connection Error Handling', () => {
           timeout: '5000',
           createDatabase: false,
         }),
-      ).rejects.toThrow();
-    }, 15000);
+      ).rejects.toThrow()
+    }, 15000)
 
     it('should throw error when DSN host is unreachable', async () => {
       await expect(
@@ -33,8 +33,8 @@ describe('Connection Error Handling', () => {
           timeout: '5000',
           createDatabase: false,
         }),
-      ).rejects.toThrow();
-    }, 15000);
+      ).rejects.toThrow()
+    }, 15000)
 
     it('should throw error with invalid credentials', async () => {
       await expect(
@@ -46,9 +46,9 @@ describe('Connection Error Handling', () => {
           timeout: '5000',
           createDatabase: false,
         }),
-      ).rejects.toThrow();
-    }, 15000);
-  });
+      ).rejects.toThrow()
+    }, 15000)
+  })
 
   describe('getMigrationStatus', () => {
     it('should throw error when host is unreachable', async () => {
@@ -58,8 +58,8 @@ describe('Connection Error Handling', () => {
           migrationsHome: './tests/migrations/one',
           timeout: '5000',
         }),
-      ).rejects.toThrow();
-    }, 15000);
+      ).rejects.toThrow()
+    }, 15000)
 
     it('should throw error with wrong port', async () => {
       await expect(
@@ -68,8 +68,8 @@ describe('Connection Error Handling', () => {
           migrationsHome: './tests/migrations/one',
           timeout: '5000',
         }),
-      ).rejects.toThrow();
-    }, 15000);
+      ).rejects.toThrow()
+    }, 15000)
 
     it('should throw error when DSN host is unreachable', async () => {
       await expect(
@@ -78,8 +78,8 @@ describe('Connection Error Handling', () => {
           migrationsHome: './tests/migrations/one',
           timeout: '5000',
         }),
-      ).rejects.toThrow();
-    }, 15000);
+      ).rejects.toThrow()
+    }, 15000)
 
     it('should throw error with invalid credentials', async () => {
       await expect(
@@ -90,7 +90,7 @@ describe('Connection Error Handling', () => {
           migrationsHome: './tests/migrations/one',
           timeout: '5000',
         }),
-      ).rejects.toThrow();
-    }, 15000);
-  });
-});
+      ).rejects.toThrow()
+    }, 15000)
+  })
+})

@@ -4,6 +4,8 @@
 
 [![npm version](https://img.shields.io/npm/v/clickhouse-migrations.svg)](https://www.npmjs.com/package/clickhouse-migrations)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![Bun](https://img.shields.io/badge/bun-%3E=1.2.23-black)](https://bun.sh)
+[![Node](https://img.shields.io/badge/node-%3E=20-green)](https://nodejs.org)
 
 ## Features
 
@@ -24,22 +26,26 @@
 - [Usage Examples](#usage-examples)
 - [CLI Reference](#cli-reference)
 - [Programmatic Usage](#programmatic-usage)
+- [Development](#development)
 - [Best Practices](#best-practices)
 - [Philosophy: Forward-Only Migrations](#philosophy-forward-only-migrations)
 - [Security](#security)
 - [Troubleshooting](#troubleshooting)
+- [Contributing](#contributing)
 
 ## Installation
 
 ```sh
-npm install clickhouse-migrations
+bun add clickhouse-migrations
 ```
 
 Or install globally:
 
 ```sh
-npm install -g clickhouse-migrations
+bun add -g clickhouse-migrations
 ```
+
+> **Note:** This project uses [Bun](https://bun.sh) as its package manager and runtime. npm, yarn, and pnpm are not supported.
 
 ## Quick Start
 
@@ -437,7 +443,7 @@ You must specify connection parameters either via DSN **OR** individual options,
 
 ## Programmatic Usage
 
-You can use `clickhouse-migrations` as a library in your Node.js application:
+You can use `clickhouse-migrations` as a library in your Node.js or Bun application:
 
 ```typescript
 import { runMigration } from 'clickhouse-migrations';
@@ -569,6 +575,207 @@ const invalidConfig: MigrationRunConfig = {
   migrationsHome: './migrations',
 };
 ```
+
+## Development
+
+This project uses modern tooling and follows industry best practices for TypeScript development.
+
+### Prerequisites
+
+- **Bun** >= 1.2.23 ([Install Bun](https://bun.sh))
+- **Node.js** >= 20 (for runtime compatibility)
+
+> **Important:** This project **requires** Bun as the package manager. npm, yarn, and pnpm are explicitly **not supported**. The project includes safeguards to prevent accidental usage of other package managers.
+
+### Setup
+
+Clone the repository and install dependencies:
+
+```sh
+git clone https://github.com/VVVi/clickhouse-migrations.git
+cd clickhouse-migrations
+bun install
+```
+
+### Project Structure
+
+```
+clickhouse-migrations/
+├── src/              # TypeScript source files
+│   ├── cli.ts        # Command-line interface
+│   ├── migrate.ts    # Migration logic
+│   ├── sql-parse.ts  # SQL parser
+│   └── logger.ts     # Logging utilities
+├── tests/            # Test files
+│   ├── *.unit.test.ts       # Unit tests
+│   ├── *.integration.test.ts # Integration tests
+│   └── *.e2e.test.ts        # End-to-end tests
+├── lib/              # Compiled JavaScript output (gitignored)
+├── migrations/       # Example migrations
+└── biome.json        # Biome configuration
+```
+
+### Available Scripts
+
+#### Build
+
+Compile TypeScript to JavaScript:
+
+```sh
+bun run build
+```
+
+Output is generated in the `lib/` directory.
+
+#### Testing
+
+Run all tests:
+
+```sh
+bun test
+```
+
+Run unit and integration tests only (excludes e2e):
+
+```sh
+bun run test:unit
+```
+
+Run end-to-end tests only:
+
+```sh
+bun run test:e2e
+```
+
+#### Linting and Formatting
+
+This project uses [Biome](https://biomejs.dev/) for linting and formatting (replaces ESLint + Prettier).
+
+Check and fix code style issues:
+
+```sh
+bun run check
+```
+
+Format source code:
+
+```sh
+bun run format
+```
+
+Format test files:
+
+```sh
+bun run format:tests
+```
+
+Lint without fixing:
+
+```sh
+bun run lint
+```
+
+#### Pre-commit Requirements
+
+Before committing, ensure:
+
+1. All tests pass: `bun test`
+2. Code is formatted and linted: `bun run check`
+3. Build succeeds: `bun run build`
+
+The `prepublishOnly` script automatically runs tests and checks before publishing.
+
+### Code Style
+
+The project enforces strict code style rules via Biome:
+
+- **Indentation:** 2 spaces
+- **Line Width:** 120 characters
+- **Quotes:** Single quotes
+- **Semicolons:** As needed (ASI - Automatic Semicolon Insertion)
+- **Trailing Commas:** Always
+- **Arrow Parens:** Always
+
+See [biome.json](biome.json) for the complete configuration.
+
+### TypeScript Configuration
+
+- **Target:** ES2022
+- **Module:** CommonJS
+- **Strict Mode:** Enabled with additional strict flags
+  - `noImplicitAny`
+  - `strictNullChecks`
+  - `noUncheckedIndexedAccess`
+  - `noImplicitReturns`
+  - `noFallthroughCasesInSwitch`
+  - `noUnusedLocals`
+  - `noUnusedParameters`
+
+See [tsconfig.json](tsconfig.json) for the complete configuration.
+
+### Testing Philosophy
+
+- **Unit tests** - Test individual functions and modules in isolation
+- **Integration tests** - Test interactions between modules
+- **E2E tests** - Test complete workflows including ClickHouse connections
+
+Run tests frequently during development to catch regressions early.
+
+### Debugging
+
+Run the CLI locally during development:
+
+```sh
+# Using Bun
+bun run lib/cli.js migrate --host=http://localhost:8123 --migrations-home=./migrations
+
+# Or using Node
+node lib/cli.js migrate --host=http://localhost:8123 --migrations-home=./migrations
+```
+
+### Common Development Tasks
+
+#### Adding a New Feature
+
+1. Write tests first (TDD approach recommended)
+2. Implement the feature in `src/`
+3. Run `bun run check` to ensure code quality
+4. Run `bun test` to verify tests pass
+5. Update documentation if needed
+
+#### Fixing a Bug
+
+1. Write a failing test that reproduces the bug
+2. Fix the bug in `src/`
+3. Verify the test now passes
+4. Run full test suite to ensure no regressions
+
+#### Updating Dependencies
+
+```sh
+# Update all dependencies
+bun update
+
+# Update specific dependency
+bun update @clickhouse/client
+```
+
+After updating dependencies, run the full test suite to ensure compatibility.
+
+### EditorConfig
+
+The project includes [.editorconfig](.editorconfig) for consistent coding style across different editors. Most modern editors support EditorConfig automatically or via plugins.
+
+### Package Manager Enforcement
+
+The project includes multiple safeguards to ensure Bun is used:
+
+1. **engines field** in package.json rejects npm/yarn/pnpm
+2. **preinstall hook** runs `only-allow bun`
+3. **.npmrc** sets `engine-strict=true`
+4. **Lock files** for other package managers are gitignored
+
+If you accidentally try to use npm/yarn/pnpm, you'll see an error message directing you to use Bun.
 
 ## Best Practices
 
@@ -877,7 +1084,95 @@ ORDER BY version;
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions are welcome! We appreciate your help in making this project better.
+
+### Getting Started
+
+1. Fork the repository
+2. Clone your fork: `git clone https://github.com/your-username/clickhouse-migrations.git`
+3. Install dependencies: `bun install`
+4. Create a branch: `git checkout -b feature/your-feature-name`
+
+### Development Workflow
+
+1. **Make your changes** in the `src/` directory
+2. **Add tests** for new features or bug fixes in the `tests/` directory
+3. **Run checks** to ensure code quality:
+   ```sh
+   bun run check      # Format and lint
+   bun test           # Run all tests
+   bun run build      # Verify build succeeds
+   ```
+4. **Commit your changes** with a clear commit message:
+   ```sh
+   git add .
+   git commit -m "feat: add support for feature X"
+   ```
+5. **Push to your fork**: `git push origin feature/your-feature-name`
+6. **Open a Pull Request** on GitHub
+
+### Commit Message Convention
+
+This project uses conventional commits:
+
+- `feat:` - New feature
+- `fix:` - Bug fix
+- `docs:` - Documentation changes
+- `refactor:` - Code refactoring
+- `test:` - Adding or updating tests
+- `chore:` - Maintenance tasks
+
+Examples:
+- `feat: add support for materialized views in migrations`
+- `fix: resolve checksum calculation for UTF-8 content`
+- `docs: update DSN configuration examples`
+
+### Code Quality Standards
+
+All contributions must:
+
+- Pass Biome linting and formatting checks (`bun run check`)
+- Pass all existing tests (`bun test`)
+- Include tests for new functionality
+- Follow the existing code style (enforced by Biome)
+- Include appropriate error handling
+- Avoid introducing security vulnerabilities
+- Maintain TypeScript strict mode compatibility
+
+### What to Contribute
+
+We welcome contributions in these areas:
+
+- **Bug fixes** - Fix reported issues
+- **Documentation** - Improve README, add examples
+- **Tests** - Increase test coverage
+- **Features** - Add new functionality (discuss in an issue first)
+- **Performance** - Optimize existing code
+- **Security** - Improve security measures
+
+### Before Submitting
+
+- [ ] Tests pass: `bun test`
+- [ ] Code is formatted: `bun run check`
+- [ ] Build succeeds: `bun run build`
+- [ ] Documentation is updated (if needed)
+- [ ] Commit messages follow convention
+- [ ] PR description clearly explains the changes
+
+### Need Help?
+
+- Open an issue for questions or discussion
+- Check existing issues and PRs for similar topics
+- Review the [Development](#development) section for setup instructions
+
+### Code Review Process
+
+1. Maintainers will review your PR
+2. Address any requested changes
+3. Once approved, your PR will be merged
+4. Your contribution will be included in the next release
+
+Thank you for contributing!
 
 ## License
 

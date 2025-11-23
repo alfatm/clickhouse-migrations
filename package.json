@@ -7,24 +7,48 @@
   },
   "main": "lib/migrate.js",
   "types": "lib/migrate.d.ts",
-  "engines": {
-    "node": ">=20"
+  "type": "commonjs",
+  "exports": {
+    ".": {
+      "types": "./lib/migrate.d.ts",
+      "default": "./lib/migrate.js"
+    },
+    "./package.json": "./package.json"
   },
+  "sideEffects": false,
+  "engines": {
+    "node": ">=20",
+    "bun": ">=1.2.23",
+    "npm": "please-use-bun",
+    "yarn": "please-use-bun",
+    "pnpm": "please-use-bun"
+  },
+  "packageManager": "bun@1.2.23",
   "private": false,
   "license": "MIT",
   "author": "VVVi",
-  "repository": "VVVi/clickhouse-migrations",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/VVVi/clickhouse-migrations.git"
+  },
+  "bugs": {
+    "url": "https://github.com/VVVi/clickhouse-migrations/issues"
+  },
+  "homepage": "https://github.com/VVVi/clickhouse-migrations#readme",
   "scripts": {
+    "preinstall": "npx only-allow bun",
     "build": "rm lib/*; tsc",
     "test": "jest --config jestconfig.json",
     "test:unit": "jest --config jestconfig.json --testPathPatterns=\"\\.(unit|integration)\\.test\\.ts$\"",
     "test:e2e": "jest --config jestconfig.json --testPathPatterns=\"\\.e2e\\.test\\.ts$\"",
-    "format": "prettier --write \"src/**/*.ts\" \"src/**/*.js\"",
-    "lint": "eslint ./src",
-    "prepare": "npm run build",
-    "prepublishOnly": "npm test && npm run lint",
-    "preversion": "npm run lint",
-    "version": "npm run format && git add -A src",
+    "format": "biome format --write ./src",
+    "format:tests": "biome format --write ./tests",
+    "lint": "biome lint ./src",
+    "check": "biome check --write ./src",
+    "prepare": "bun run build",
+    "prepublishOnly": "bun test && bun run check",
+    "preversion": "bun run check",
+    "version": "bun run format && git add -A src",
     "postversion": "git push && git push --tags"
   },
   "dependencies": {
@@ -32,19 +56,12 @@
     "commander": "^14.0.2"
   },
   "devDependencies": {
-    "@eslint/js": "^9.33.0",
+    "@biomejs/biome": "^2.3.7",
     "@types/jest": "^30.0.0",
     "@types/node": "^24.2.1",
-    "@typescript-eslint/eslint-plugin": "^8.39.0",
-    "@typescript-eslint/parser": "^8.39.0",
-    "eslint": "^9.33.0",
-    "eslint-config-prettier": "^10.1.8",
-    "eslint-plugin-prettier": "^5.5.4",
     "jest": "^30.0.5",
-    "prettier": "^3.6.2",
     "ts-jest": "^29.4.1",
-    "typescript": "^5.9.2",
-    "typescript-eslint": "^8.39.0"
+    "typescript": "^5.9.2"
   },
   "files": [
     "lib/**/*"

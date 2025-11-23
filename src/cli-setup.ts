@@ -1,43 +1,46 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { Command } from 'commander';
-import { runMigration, getMigrationStatus, displayMigrationStatus } from './migrate';
-import { getLogger } from './logger';
-import type { CliParameters } from './types/cli';
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { Command } from 'commander'
+import { getLogger } from './logger'
+import { displayMigrationStatus, getMigrationStatus, runMigration } from './migrate'
+import type { CliParameters } from './types/cli'
 
 // Parses CLI/env booleans: handles 'false', '0', 'no', 'off', 'n' as false
-const parseBoolean = (value: unknown, defaultValue: boolean = true): boolean => {
+const parseBoolean = (value: unknown, defaultValue = true): boolean => {
   if (value === undefined || value === null) {
-    return defaultValue;
+    return defaultValue
   }
 
   if (typeof value === 'boolean') {
-    return value;
+    return value
   }
 
   if (typeof value === 'number') {
-    return value !== 0;
+    return value !== 0
   }
 
-  const str = String(value).toLowerCase().trim();
-  const falsyValues = ['false', '0', 'no', 'off', 'n'];
+  const str = String(value).toLowerCase().trim()
+  const falsyValues = ['false', '0', 'no', 'off', 'n']
 
-  return !falsyValues.includes(str);
-};
+  return !falsyValues.includes(str)
+}
 
 // Read version from package.json
 // When compiled to lib/, we need to go up one directory to find package.json
 const getVersion = (): string | undefined => {
   // __dirname in CommonJS points to lib/ after compilation, so we go up to project root
-  const packageJsonPath = join(__dirname, '..', 'package.json');
-  const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
+  const packageJsonPath = join(__dirname, '..', 'package.json')
+  const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'))
   return packageJson.version
-};
+}
 
 export const setupCli = (): Command => {
-  const program = new Command();
+  const program = new Command()
 
-  program.name('clickhouse-migrations').description('ClickHouse migrations.').version(getVersion() ?? '');
+  program
+    .name('clickhouse-migrations')
+    .description('ClickHouse migrations.')
+    .version(getVersion() ?? '')
 
   program
     .command('migrate')
@@ -54,7 +57,7 @@ export const setupCli = (): Command => {
     .requiredOption('--migrations-home <dir>', "Migrations' directory", process.env.CH_MIGRATIONS_HOME)
     .option(
       '--db-engine <value>',
-      'Database engine with optional cluster config (default: "ENGINE=Atomic"). Examples: "ENGINE = Replicated()" or "ON CLUSTER \'{cluster}\' ENGINE = Replicated(\'/clickhouse/{installation}/{cluster}/databases/{database}\', \'{shard}\', \'{replica}\')"',
+      "Database engine with optional cluster config (default: \"ENGINE=Atomic\"). Examples: \"ENGINE = Replicated()\" or \"ON CLUSTER '{cluster}' ENGINE = Replicated('/clickhouse/{installation}/{cluster}/databases/{database}', '{shard}', '{replica}')\"",
       process.env.CH_MIGRATIONS_DB_ENGINE,
     )
     .option(
@@ -97,12 +100,12 @@ export const setupCli = (): Command => {
           key: options.key,
           abortDivergent: parseBoolean(options.abortDivergent, true),
           createDatabase: parseBoolean(options.createDatabase, true),
-        });
+        })
       } catch (e: unknown) {
-        getLogger().error(e instanceof Error ? e.message : String(e));
-        process.exit(1);
+        getLogger().error(e instanceof Error ? e.message : String(e))
+        process.exit(1)
       }
-    });
+    })
 
   program
     .command('status')
@@ -144,13 +147,13 @@ export const setupCli = (): Command => {
           caCert: options.caCert,
           cert: options.cert,
           key: options.key,
-        });
-        displayMigrationStatus(statusList);
+        })
+        displayMigrationStatus(statusList)
       } catch (e: unknown) {
-        getLogger().error(e instanceof Error ? e.message : String(e));
-        process.exit(1);
+        getLogger().error(e instanceof Error ? e.message : String(e))
+        process.exit(1)
       }
-    });
+    })
 
-  return program;
-};
+  return program
+}

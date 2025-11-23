@@ -1,3 +1,9 @@
 node_modules
 lib
 .DS_Store
+
+# Lock files - only bun.lock is used
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+.pnpm-debug.log

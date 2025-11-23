@@ -1,13 +1,13 @@
-import { describe, it, expect } from '@jest/globals';
-import exec from 'child_process';
+import exec from 'node:child_process'
+import { describe, expect, it, jest } from '@jest/globals'
 
 const execute = async (script: string, options: exec.ExecOptions) => {
   return new Promise<{ error: exec.ExecException | null; stdout: string; stderr: string }>((resolve) => {
     exec.exec(script, options, (error, stdout, stderr) => {
-      resolve({ error, stdout: stdout.toString(), stderr: stderr.toString() });
-    });
-  });
-};
+      resolve({ error, stdout: stdout.toString(), stderr: stderr.toString() })
+    })
+  })
+}
 
 const envVars = {
   CH_MIGRATIONS_HOST: 'http://sometesthost:8123',
@@ -15,47 +15,47 @@ const envVars = {
   CH_MIGRATIONS_PASSWORD: '',
   CH_MIGRATIONS_DB: 'analytics',
   CH_MIGRATIONS_HOME: '/app/clickhouse/migrations',
-};
+}
 
 describe('Execution tests', () => {
   beforeEach(() => {
-    jest.resetModules();
-  });
+    jest.resetModules()
+  })
 
   it('No parameters provided', async () => {
-    const result = await execute('node lib/cli.js migrate', { cwd: '.' });
+    const result = await execute('node lib/cli.js migrate', { cwd: '.' })
 
     // Should fail with missing migrations-home (the only truly required option now)
-    expect(result.stderr).toBe("error: required option '--migrations-home <dir>' not specified\n");
-  });
+    expect(result.stderr).toBe("error: required option '--migrations-home <dir>' not specified\n")
+  })
 
   it('No migration directory', async () => {
     const command =
-      'node ./lib/cli.js migrate --host=http://sometesthost:8123 --user=default --password="" --db=analytics --migrations-home=/app/clickhouse/migrations';
+      'node ./lib/cli.js migrate --host=http://sometesthost:8123 --user=default --password="" --db=analytics --migrations-home=/app/clickhouse/migrations'
 
-    const result = await execute(command, { cwd: '.' });
+    const result = await execute(command, { cwd: '.' })
 
     expect(result.stderr).toBe(
       '\x1B[36m clickhouse-migrations : \x1B[31m Error: No migration directory /app/clickhouse/migrations. Please create it. \n',
-    );
-  });
+    )
+  })
 
   it('Environment variables are provided, but no migration directory', async () => {
-    const result = await execute('node lib/cli.js migrate', { env: { ...process.env, ...envVars } });
+    const result = await execute('node lib/cli.js migrate', { env: { ...process.env, ...envVars } })
 
     expect(result.stderr).toBe(
       '\x1B[36m clickhouse-migrations : \x1B[31m Error: No migration directory /app/clickhouse/migrations. Please create it. \n',
-    );
-  });
+    )
+  })
 
   it('Incorrectly named migration', async () => {
     const command =
-      'node ./lib/cli.js migrate --host=http://sometesthost:8123 --user=default --password="" --db=analytics --migrations-home=tests/migrations/bad';
+      'node ./lib/cli.js migrate --host=http://sometesthost:8123 --user=default --password="" --db=analytics --migrations-home=tests/migrations/bad'
 
-    const result = await execute(command, { cwd: '.' });
+    const result = await execute(command, { cwd: '.' })
 
     expect(result.stderr).toBe(
       '\x1B[36m clickhouse-migrations : \x1B[31m Error: Migration name should start from a non-negative integer, example: 0_init.sql or 1_init.sql. Invalid migration: bad_1.sql \n',
-    );
-  });
-});
+    )
+  })
+})

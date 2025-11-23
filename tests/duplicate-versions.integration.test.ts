@@ -1,8 +1,8 @@
-import { describe, expect, it } from '@jest/globals';
+import { describe, expect, it } from '@jest/globals'
 
-import { runMigration } from '../src/migrate';
+import { runMigration } from '../src/migrate'
 
-jest.mock('@clickhouse/client', () => ({ createClient: () => createClient1 }));
+jest.mock('@clickhouse/client', () => ({ createClient: () => createClient1 }))
 
 const createClient1 = {
   query: jest.fn(() => Promise.resolve({ json: () => [] })),
@@ -10,7 +10,7 @@ const createClient1 = {
   insert: jest.fn(() => Promise.resolve({})),
   close: jest.fn(() => Promise.resolve()),
   ping: jest.fn(() => Promise.resolve()),
-};
+}
 
 describe('Duplicate version validation', () => {
   it('Should reject migrations with duplicate versions', async () => {
@@ -24,6 +24,6 @@ describe('Duplicate version validation', () => {
         abortDivergent: true,
         createDatabase: false, // since we check migration files before DB operations
       }),
-    ).rejects.toThrow(/Found duplicate migration version.*1/);
-  });
-});
+    ).rejects.toThrow(/Found duplicate migration version.*1/)
+  })
+})
