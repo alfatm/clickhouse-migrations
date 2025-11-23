@@ -3,7 +3,23 @@ import { join } from 'node:path'
 import { Command } from 'commander'
 import { getLogger } from './logger'
 import { displayMigrationStatus, getMigrationStatus, runMigration } from './migrate'
-import type { CliParameters } from './types/cli'
+
+export type CliParameters = {
+  migrationsHome: string
+  dsn?: string
+  host?: string
+  user?: string
+  password?: string
+  db?: string
+  dbEngine?: string
+  tableEngine?: string
+  timeout?: string | number
+  caCert?: string
+  cert?: string
+  key?: string
+  abortDivergent?: boolean | string
+  createDatabase?: boolean | string
+}
 
 // Parses CLI/env booleans: handles 'false', '0', 'no', 'off', 'n' as false
 const parseBoolean = (value: unknown, defaultValue = true): boolean => {
