@@ -2,13 +2,12 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import { readFile, readdir } from 'node:fs/promises';
 import { type ClickHouseClient, type ClickHouseClientConfigOptions, createClient } from '@clickhouse/client';
-import { Command } from 'commander';
 import { sqlSets, sqlQueries } from './sql-parse';
 import { setupConnectionConfig } from './dsn-parser';
+import { getLogger, COLORS } from './logger';
 import type {
   MigrationBase,
   MigrationsRowData,
-  CliParameters,
   QueryError,
   ConnectionConfig,
   CreateDbConfig,
@@ -16,14 +15,6 @@ import type {
   MigrationStatusConfig,
   MigrationStatus,
 } from './types/cli';
-
-const COLORS = {
-  CYAN: '\x1b[36m',
-  GREEN: '\x1b[32m',
-  YELLOW: '\x1b[33m',
-  RED: '\x1b[31m',
-  RESET: '\x1b[0m',
-} as const;
 
 const MIGRATIONS_TABLE = '_migrations';
 const DEFAULT_TABLE_ENGINE = 'MergeTree';
@@ -111,40 +102,6 @@ const sanitizeErrorMessage = (message: string): string => {
   );
 
   return sanitized;
-};
-
-const log = (type: 'info' | 'error' = 'info', message: string, error?: string) => {
-  if (type === 'info') {
-    console.log(COLORS.CYAN, `clickhouse-migrations :`, COLORS.RESET, message);
-  } else {
-    console.error(
-      COLORS.CYAN,
-      `clickhouse-migrations :`,
-      COLORS.RED,
-      `Error: ${message}`,
-      error ? `\n\n ${error}` : '',
-    );
-  }
-};
-
-// Parses CLI/env booleans: handles 'false', '0', 'no', 'off', 'n' as false
-const parseBoolean = (value: unknown, defaultValue: boolean = true): boolean => {
-  if (value === undefined || value === null) {
-    return defaultValue;
-  }
-
-  if (typeof value === 'boolean') {
-    return value;
-  }
-
-  if (typeof value === 'number') {
-    return value !== 0;
-  }
-
-  const str = String(value).toLowerCase().trim();
-  const falsyValues = ['false', '0', 'no', 'off', 'n'];
-
-  return !falsyValues.includes(str);
 };
 
 const connect = (config: ConnectionConfig & { host: string }): ClickHouseClient => {
@@ -455,9 +412,8 @@ const applyMigrations = async (
             `Migration file shouldn't be changed after apply. Please restore content of the ${appliedMigration.migration_name} migration.`,
           );
         }
-        log(
-          'info',
-          `Warning: applied migration ${appliedMigration.migration_name} has different checksum than the file on filesystem. Continuing due to --abort-divergent=false.`,
+        getLogger().warn(
+          `applied migration ${appliedMigration.migration_name} has different checksum than the file on filesystem. Continuing due to --abort-divergent=false.`,
         );
       }
       continue;
@@ -474,7 +430,7 @@ const applyMigrations = async (
       await executeMigrationQueries(client, queries, mergedSettings, migration.file);
     } catch (e: unknown) {
       if (appliedMigrationsList.length > 0) {
-        log('info', `The migration(s) ${appliedMigrationsList.join(', ')} was successfully applied!`);
+        getLogger().info(`The migration(s) ${appliedMigrationsList.join(', ')} was successfully applied!`);
       }
       throw e;
     }
@@ -485,9 +441,9 @@ const applyMigrations = async (
   }
 
   if (appliedMigrationsList.length > 0) {
-    log('info', `The migration(s) ${appliedMigrationsList.join(', ')} was successfully applied!`);
+    getLogger().info(`The migration(s) ${appliedMigrationsList.join(', ')} was successfully applied!`);
   } else {
-    log('info', `No migrations to apply.`);
+    getLogger().info(`No migrations to apply.`);
   }
 };
 
@@ -634,156 +590,32 @@ const getMigrationStatus = async (config: MigrationStatusConfig): Promise<Migrat
 };
 
 const displayMigrationStatus = (statusList: MigrationStatus[]): void => {
+  const logger = getLogger();
   const appliedCount = statusList.filter((s) => s.applied).length;
   const pendingCount = statusList.filter((s) => !s.applied).length;
   const divergentCount = statusList.filter((s) => s.applied && s.checksumMatch === false).length;
 
-  log('info', `Migration Status: ${appliedCount} applied, ${pendingCount} pending`);
+  logger.info(`Migration Status: ${appliedCount} applied, ${pendingCount} pending`);
 
   if (divergentCount > 0) {
-    console.log(
-      COLORS.YELLOW,
-      `  Warning: ${divergentCount} applied migration(s) have checksum mismatches`,
-      COLORS.RESET,
-    );
+    logger.warn(`${divergentCount} applied migration(s) have checksum mismatches`);
   }
 
-  console.log();
+  logger.log('');
 
   statusList.forEach((status) => {
     if (status.applied) {
       const statusSymbol = status.checksumMatch === false ? COLORS.YELLOW + '⚠ ' : COLORS.GREEN + '✓ ';
       const checksumWarning = status.checksumMatch === false ? COLORS.YELLOW + ' (checksum mismatch)' : '';
-      console.log(
+      logger.log(
         `${statusSymbol}${COLORS.RESET}[${status.version}] ${status.file} - applied at ${status.appliedAt}${checksumWarning}${COLORS.RESET}`,
       );
     } else {
-      console.log(`${COLORS.CYAN}○${COLORS.RESET} [${status.version}] ${status.file} - pending`);
+      logger.log(`${COLORS.CYAN}○${COLORS.RESET} [${status.version}] ${status.file} - pending`);
     }
   });
 
-  console.log();
+  logger.log('');
 };
 
-const migrate = () => {
-  const program = new Command();
-
-  program.name('clickhouse-migrations').description('ClickHouse migrations.').version('1.2.0');
-
-  program
-    .command('migrate')
-    .description('Apply migrations.')
-    .option(
-      '--dsn <dsn>',
-      'Connection DSN (ex: clickhouse://user:pass@localhost:8123/db)',
-      process.env.CH_MIGRATIONS_DSN,
-    )
-    .option('--host <name>', 'Clickhouse hostname (ex: http://clickhouse:8123)', process.env.CH_MIGRATIONS_HOST)
-    .option('--user <name>', 'Username', process.env.CH_MIGRATIONS_USER)
-    .option('--password <password>', 'Password', process.env.CH_MIGRATIONS_PASSWORD)
-    .option('--db <name>', 'Database name', process.env.CH_MIGRATIONS_DB)
-    .requiredOption('--migrations-home <dir>', "Migrations' directory", process.env.CH_MIGRATIONS_HOME)
-    .option(
-      '--db-engine <value>',
-      'Database engine with optional cluster config (default: "ENGINE=Atomic"). Examples: "ENGINE = Replicated()" or "ON CLUSTER \'{cluster}\' ENGINE = Replicated(\'/clickhouse/{installation}/{cluster}/databases/{database}\', \'{shard}\', \'{replica}\')"',
-      process.env.CH_MIGRATIONS_DB_ENGINE,
-    )
-    .option(
-      '--table-engine <value>',
-      'Engine for the _migrations table (default: "MergeTree"). Examples: "ReplicatedMergeTree()" or "ReplicatedMergeTree(\'/clickhouse/tables/{shard}/table_name\', \'{replica}\')"',
-      process.env.CH_MIGRATIONS_TABLE_ENGINE,
-    )
-    .option(
-      '--timeout <value>',
-      'Client request timeout (milliseconds, default value 30000)',
-      process.env.CH_MIGRATIONS_TIMEOUT,
-    )
-    .option('--ca-cert <path>', 'CA certificate file path', process.env.CH_MIGRATIONS_CA_CERT)
-    .option('--cert <path>', 'Client certificate file path', process.env.CH_MIGRATIONS_CERT)
-    .option('--key <path>', 'Client key file path', process.env.CH_MIGRATIONS_KEY)
-    .option(
-      '--abort-divergent <value>',
-      'Abort if applied migrations have different checksums (default: true)',
-      process.env.CH_MIGRATIONS_ABORT_DIVERGENT,
-    )
-    .option(
-      '--create-database <value>',
-      'Create database if it does not exist (default: true)',
-      process.env.CH_MIGRATIONS_CREATE_DATABASE,
-    )
-    .action(async (options: CliParameters) => {
-      try {
-        await runMigration({
-          migrationsHome: options.migrationsHome,
-          dsn: options.dsn,
-          host: options.host,
-          username: options.user,
-          password: options.password,
-          dbName: options.db,
-          dbEngine: options.dbEngine,
-          tableEngine: options.tableEngine,
-          timeout: options.timeout,
-          caCert: options.caCert,
-          cert: options.cert,
-          key: options.key,
-          abortDivergent: parseBoolean(options.abortDivergent, true),
-          createDatabase: parseBoolean(options.createDatabase, true),
-        });
-      } catch (e: unknown) {
-        log('error', e instanceof Error ? e.message : String(e));
-        process.exit(1);
-      }
-    });
-
-  program
-    .command('status')
-    .description('Show migration status.')
-    .option(
-      '--dsn <dsn>',
-      'Connection DSN (ex: clickhouse://user:pass@localhost:8123/db)',
-      process.env.CH_MIGRATIONS_DSN,
-    )
-    .option('--host <name>', 'Clickhouse hostname (ex: http://clickhouse:8123)', process.env.CH_MIGRATIONS_HOST)
-    .option('--user <name>', 'Username', process.env.CH_MIGRATIONS_USER)
-    .option('--password <password>', 'Password', process.env.CH_MIGRATIONS_PASSWORD)
-    .option('--db <name>', 'Database name', process.env.CH_MIGRATIONS_DB)
-    .requiredOption('--migrations-home <dir>', "Migrations' directory", process.env.CH_MIGRATIONS_HOME)
-    .option(
-      '--table-engine <value>',
-      'Engine for the _migrations table (default: "MergeTree"). Examples: "ReplicatedMergeTree()" or "ReplicatedMergeTree(\'/clickhouse/tables/{shard}/table_name\', \'{replica}\')"',
-      process.env.CH_MIGRATIONS_TABLE_ENGINE,
-    )
-    .option(
-      '--timeout <value>',
-      'Client request timeout (milliseconds, default value 30000)',
-      process.env.CH_MIGRATIONS_TIMEOUT,
-    )
-    .option('--ca-cert <path>', 'CA certificate file path', process.env.CH_MIGRATIONS_CA_CERT)
-    .option('--cert <path>', 'Client certificate file path', process.env.CH_MIGRATIONS_CERT)
-    .option('--key <path>', 'Client key file path', process.env.CH_MIGRATIONS_KEY)
-    .action(async (options: CliParameters) => {
-      try {
-        const statusList = await getMigrationStatus({
-          migrationsHome: options.migrationsHome,
-          dsn: options.dsn,
-          host: options.host,
-          username: options.user,
-          password: options.password,
-          dbName: options.db,
-          tableEngine: options.tableEngine,
-          timeout: options.timeout,
-          caCert: options.caCert,
-          cert: options.cert,
-          key: options.key,
-        });
-        displayMigrationStatus(statusList);
-      } catch (e: unknown) {
-        log('error', e instanceof Error ? e.message : String(e));
-        process.exit(1);
-      }
-    });
-
-  program.parse();
-};
-
-export { migrate, runMigration, getMigrationStatus, displayMigrationStatus };
+export { runMigration, getMigrationStatus, displayMigrationStatus };

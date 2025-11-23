@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
-import { migrate } from './migrate';
+import { setupCli } from './cli-setup';
 
-migrate();
+const program = setupCli();
+program.parse();
 
 export {};

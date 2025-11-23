@@ -84,10 +84,9 @@ describe('Divergent migration tests with abort_divergent flag', () => {
 
     // Should log warning message
     expect(consoleLogSpy).toHaveBeenCalledWith(
-      '\x1b[36m',
-      'clickhouse-migrations :',
+      '\x1b[33m',
+      '  Warning: applied migration 1_init.sql has different checksum than the file on filesystem. Continuing due to --abort-divergent=false.',
       '\x1b[0m',
-      'Warning: applied migration 1_init.sql has different checksum than the file on filesystem. Continuing due to --abort-divergent=false.',
     );
 
     // Should also log success message for no new migrations
