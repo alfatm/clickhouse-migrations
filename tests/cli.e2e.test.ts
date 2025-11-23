@@ -1,5 +1,5 @@
 import { exec } from 'node:child_process'
-import path from 'node:path'
+import * as path from 'node:path'
 import { promisify } from 'node:util'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { buildCliCommand, runCliCommand } from './helpers/cliHelper'
@@ -182,6 +182,46 @@ describe('CLI E2E Tests', () => {
     } catch (error: unknown) {
       console.error('Status checksum test failed:', (error as Error).message)
       throw error
+    }
+  })
+
+  it('should fail migrate with invalid credentials', async () => {
+    try {
+      await runCliCommand(
+        'migrate',
+        {
+          host: 'http://localhost:8123',
+          user: 'invalid_user',
+          password: 'invalid_password',
+          db: 'test_db',
+          'migrations-home': testMigrationsDir,
+        },
+        { timeout: E2E_TIMEOUT },
+      )
+      throw new Error('Expected command to fail but it succeeded')
+    } catch (error: unknown) {
+      const errorMessage = (error as Error).message
+      expect(errorMessage).toMatch(/authentication|auth|credentials|unauthorized|403/i)
+    }
+  })
+
+  it('should fail status with invalid credentials', async () => {
+    try {
+      await runCliCommand(
+        'status',
+        {
+          host: 'http://localhost:8123',
+          user: 'invalid_user',
+          password: 'invalid_password',
+          db: 'test_db',
+          'migrations-home': testMigrationsDir,
+        },
+        { timeout: E2E_TIMEOUT },
+      )
+      throw new Error('Expected command to fail but it succeeded')
+    } catch (error: unknown) {
+      const errorMessage = (error as Error).message
+      expect(errorMessage).toMatch(/authentication|auth|credentials|unauthorized|403/i)
     }
   })
 

@@ -36,19 +36,6 @@ describe('Connection Error Handling', () => {
         }),
       ).rejects.toThrow(/getaddrinfo|ENOTFOUND|EAI_AGAIN|network|connection/i)
     })
-
-    it('should throw error with invalid credentials', async () => {
-      await expect(
-        runMigration({
-          host: 'http://localhost:8123',
-          username: 'invalid_user',
-          password: 'invalid_password',
-          migrationsHome: './tests/migrations/one',
-          timeout: MIGRATION_TIMEOUT,
-          createDatabase: false,
-        }),
-      ).rejects.toThrow(/authentication|auth|credentials|unauthorized|403/i)
-    })
   })
 
   describe('getMigrationStatus', () => {
@@ -80,18 +67,6 @@ describe('Connection Error Handling', () => {
           timeout: MIGRATION_TIMEOUT,
         }),
       ).rejects.toThrow(/getaddrinfo|ENOTFOUND|EAI_AGAIN|network|connection/i)
-    })
-
-    it('should throw error with invalid credentials', async () => {
-      await expect(
-        getMigrationStatus({
-          host: 'http://localhost:8123',
-          username: 'invalid_user',
-          password: 'invalid_password',
-          migrationsHome: './tests/migrations/one',
-          timeout: MIGRATION_TIMEOUT,
-        }),
-      ).rejects.toThrow(/authentication|auth|credentials|unauthorized|403/i)
     })
   })
 })

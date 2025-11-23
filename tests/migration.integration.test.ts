@@ -12,7 +12,11 @@ vi.mock('@clickhouse/client', () => ({
 
 describe('Migration tests', () => {
   beforeEach(() => {
-    setupIntegrationTest({ mockQuery, mockExec, mockInsert, mockClose })
+    setupIntegrationTest({
+      mockQuery, mockExec, mockInsert, mockClose,
+      mockClient: undefined,
+      mockPing: undefined
+    })
   })
 
   afterEach(() => {

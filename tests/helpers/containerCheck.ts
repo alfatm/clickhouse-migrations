@@ -33,9 +33,19 @@ export async function ensureContainerRunning(
     if (error instanceof Error && error.message.includes('not running')) {
       throw error
     }
-    const suggestion = startCommand ? ` Please ensure Docker is available and start the container with: ${startCommand}` : ''
+
+    // Detect Docker daemon not running
+    const errorMsg = (error as Error).message
+    if (errorMsg.includes('Cannot connect to the Docker daemon') || errorMsg.includes('docker daemon')) {
+      throw new Error(
+        `Docker is not running. Please start Docker and try again.${startCommand ? `\nThen start the container with: ${startCommand}` : ''}`,
+      )
+    }
+
+    // Generic Docker error
+    const suggestion = startCommand ? `\nTo start the container: ${startCommand}` : ''
     throw new Error(
-      `Cannot check container status.${suggestion} Error: ${(error as Error).message}`,
+      `Cannot check container status: ${errorMsg}${suggestion}`,
     )
   }
 }
