@@ -629,22 +629,42 @@ Output is generated in the `lib/` directory.
 
 #### Testing
 
+This project uses [Vitest](https://vitest.dev/) for testing.
+
+> **⚠️ Important:** Always use `bun run test` (not `bun test`). The command `bun test` invokes Bun's built-in test runner instead of Vitest, which will not work correctly with this project's test suite.
+>
+> 📖 See [TESTING.md](./TESTING.md) for detailed testing documentation.
+
 Run all tests:
 
 ```sh
-bun test
+bun run test
 ```
 
-Run unit and integration tests only (excludes e2e):
+Run specific test categories:
 
 ```sh
+# Unit tests only (171 tests)
 bun run test:unit
+
+# Integration tests only (28 tests)
+bun run test:integration
+
+# End-to-end tests only (10 tests)
+bun run test:e2e
 ```
 
-Run end-to-end tests only:
+Additional test commands:
 
 ```sh
-bun run test:e2e
+# Watch mode - re-run tests on file changes
+bun run test:watch
+
+# Interactive UI mode
+bun run test:ui
+
+# Generate coverage report
+bun run test:coverage
 ```
 
 #### Linting and Formatting

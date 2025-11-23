@@ -1,18 +1,24 @@
-import { describe, expect, it } from '@jest/globals'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { runMigration } from '../src/migrate'
+import { createMockClickHouseClient } from './helpers/mockClickHouseClient'
+import { cleanupTest } from './helpers/testSetup'
 
-jest.mock('@clickhouse/client', () => ({ createClient: () => createClient1 }))
+const { mockClient } = createMockClickHouseClient()
 
-const createClient1 = {
-  query: jest.fn(() => Promise.resolve({ json: () => [] })),
-  exec: jest.fn(() => Promise.resolve({})),
-  insert: jest.fn(() => Promise.resolve({})),
-  close: jest.fn(() => Promise.resolve()),
-  ping: jest.fn(() => Promise.resolve()),
-}
+vi.mock('@clickhouse/client', () => ({
+  createClient: vi.fn(() => mockClient),
+}))
 
 describe('Duplicate version validation', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  afterEach(() => {
+    cleanupTest()
+  })
+
   it('Should reject migrations with duplicate versions', async () => {
     await expect(
       runMigration({

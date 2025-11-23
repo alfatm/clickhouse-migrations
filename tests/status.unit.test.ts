@@ -1,8 +1,11 @@
 import * as fs from 'node:fs/promises'
 import * as clickhouse from '@clickhouse/client'
-import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getMigrationStatus } from '../src/migrate'
 import type { MigrationStatusConfig } from '../src/types/cli'
+import { createMockClickHouseClient } from './helpers/mockClickHouseClient'
+import { cleanupTest, calculateChecksum } from './helpers/testSetup'
+import { MIGRATION_WITH_TLS_TIMEOUT } from './helpers/testConstants'
 
 /**
  * Status Unit Tests
@@ -11,35 +14,35 @@ import type { MigrationStatusConfig } from '../src/types/cli'
  */
 
 // Mock modules
-jest.mock('fs/promises')
-jest.mock('@clickhouse/client')
+vi.mock('fs/promises', () => ({
+  readdir: vi.fn(),
+  readFile: vi.fn(),
+}))
 
-const mockReaddir = fs.readdir as jest.MockedFunction<typeof fs.readdir>
-const mockReadFile = fs.readFile as jest.MockedFunction<typeof fs.readFile>
-const mockCreateClient = clickhouse.createClient as jest.MockedFunction<typeof clickhouse.createClient>
+const { mockClient, mockQuery, mockClose } = createMockClickHouseClient()
+
+vi.mock('@clickhouse/client', () => ({
+  createClient: vi.fn(() => mockClient),
+}))
+
+const mockReaddir = fs.readdir as unknown as ReturnType<typeof vi.fn>
+const mockReadFile = fs.readFile as unknown as ReturnType<typeof vi.fn>
+const mockCreateClient = clickhouse.createClient as unknown as ReturnType<typeof vi.fn>
 
 describe('getMigrationStatus', () => {
-  let mockClient: any
-
   beforeEach(() => {
-    // Reset all mocks
-    jest.clearAllMocks()
+    vi.clearAllMocks()
 
-    // Create mock client
-    mockClient = {
-      ping: (jest.fn() as any).mockResolvedValue(undefined),
-      exec: (jest.fn() as any).mockResolvedValue(undefined),
-      query: (jest.fn() as any).mockResolvedValue({
-        json: (jest.fn() as any).mockResolvedValue([]),
-      }),
-      close: (jest.fn() as any).mockResolvedValue(undefined),
-    }
-
-    mockCreateClient.mockReturnValue(mockClient as any)
+    // Reset mock implementations to defaults
+    mockQuery.mockResolvedValue({
+      json: vi.fn().mockResolvedValue([]),
+    })
+    mockClose.mockResolvedValue(undefined)
+    mockCreateClient.mockReturnValue(mockClient)
   })
 
   afterEach(() => {
-    jest.restoreAllMocks()
+    cleanupTest()
   })
 
   const createConfig = (overrides?: Partial<MigrationStatusConfig>): MigrationStatusConfig => ({
@@ -53,12 +56,12 @@ describe('getMigrationStatus', () => {
 
   it('should return pending status for unapplied migrations', async () => {
     // Mock filesystem
-    mockReaddir.mockResolvedValue(['1_init.sql', '2_add_table.sql'] as any)
+    mockReaddir.mockResolvedValue(['1_init.sql', '2_add_table.sql'])
     mockReadFile.mockResolvedValue('CREATE TABLE test (id Int32);')
 
     // Mock empty migrations table
     mockClient.query.mockResolvedValue({
-      json: (jest.fn() as any).mockResolvedValue([]),
+      json: vi.fn().mockResolvedValue([]),
     })
 
     const config = createConfig()
@@ -80,17 +83,16 @@ describe('getMigrationStatus', () => {
 
   it('should return applied status for migrations in database', async () => {
     // Mock filesystem
-    mockReaddir.mockResolvedValue(['1_init.sql'] as any)
+    mockReaddir.mockResolvedValue(['1_init.sql'])
     const migrationContent = 'CREATE TABLE test (id Int32);'
     mockReadFile.mockResolvedValue(migrationContent)
 
     // Calculate expected checksum (same as in migrate.ts)
-    const crypto = require('node:crypto')
-    const expectedChecksum = crypto.createHash('md5').update(migrationContent).digest('hex')
+    const expectedChecksum = calculateChecksum(migrationContent)
 
     // Mock migrations table with applied migration
     mockClient.query.mockResolvedValue({
-      json: (jest.fn() as any).mockResolvedValue([
+      json: vi.fn().mockResolvedValue([
         {
           version: 1,
           checksum: expectedChecksum,
@@ -117,7 +119,7 @@ describe('getMigrationStatus', () => {
 
   it('should detect checksum mismatch for modified migrations', async () => {
     // Mock filesystem
-    mockReaddir.mockResolvedValue(['1_init.sql'] as any)
+    mockReaddir.mockResolvedValue(['1_init.sql'])
     const currentContent = 'CREATE TABLE test_modified (id Int32);'
     mockReadFile.mockResolvedValue(currentContent)
 
@@ -125,7 +127,7 @@ describe('getMigrationStatus', () => {
 
     // Mock migrations table with different checksum
     mockClient.query.mockResolvedValue({
-      json: (jest.fn() as any).mockResolvedValue([
+      json: vi.fn().mockResolvedValue([
         {
           version: 1,
           checksum: oldChecksum,
@@ -152,16 +154,15 @@ describe('getMigrationStatus', () => {
 
   it('should handle mixed applied and pending migrations', async () => {
     // Mock filesystem
-    mockReaddir.mockResolvedValue(['1_init.sql', '2_add_table.sql', '3_add_index.sql'] as any)
+    mockReaddir.mockResolvedValue(['1_init.sql', '2_add_table.sql', '3_add_index.sql'])
     const migrationContent = 'CREATE TABLE test (id Int32);'
     mockReadFile.mockResolvedValue(migrationContent)
 
-    const crypto = require('node:crypto')
-    const expectedChecksum = crypto.createHash('md5').update(migrationContent).digest('hex')
+    const expectedChecksum = calculateChecksum(migrationContent)
 
     // Mock migrations table with only first two migrations applied
     mockClient.query.mockResolvedValue({
-      json: (jest.fn() as any).mockResolvedValue([
+      json: vi.fn().mockResolvedValue([
         {
           version: 1,
           checksum: expectedChecksum,
@@ -202,7 +203,7 @@ describe('getMigrationStatus', () => {
 
   it('should throw error if database connection fails', async () => {
     // Mock filesystem
-    mockReaddir.mockResolvedValue(['1_init.sql'] as any)
+    mockReaddir.mockResolvedValue(['1_init.sql'])
     mockReadFile.mockResolvedValue('CREATE TABLE test (id Int32);')
 
     // Mock connection error
@@ -216,12 +217,12 @@ describe('getMigrationStatus', () => {
 
   it('should sort migrations by version number', async () => {
     // Mock filesystem with unsorted migrations
-    mockReaddir.mockResolvedValue(['10_migration.sql', '1_init.sql', '5_middle.sql', '2_second.sql'] as any)
+    mockReaddir.mockResolvedValue(['10_migration.sql', '1_init.sql', '5_middle.sql', '2_second.sql'])
     mockReadFile.mockResolvedValue('CREATE TABLE test (id Int32);')
 
     // Mock empty migrations table
     mockClient.query.mockResolvedValue({
-      json: (jest.fn() as any).mockResolvedValue([]),
+      json: vi.fn().mockResolvedValue([]),
     })
 
     const config = createConfig()
@@ -236,11 +237,11 @@ describe('getMigrationStatus', () => {
 
   it('should handle migrations with leading zeros', async () => {
     // Mock filesystem with migrations having leading zeros
-    mockReaddir.mockResolvedValue(['001_init.sql', '002_add_table.sql'] as any)
+    mockReaddir.mockResolvedValue(['001_init.sql', '002_add_table.sql'])
     mockReadFile.mockResolvedValue('CREATE TABLE test (id Int32);')
 
     mockClient.query.mockResolvedValue({
-      json: (jest.fn() as any).mockResolvedValue([]),
+      json: vi.fn().mockResolvedValue([]),
     })
 
     const config = createConfig()
@@ -253,11 +254,11 @@ describe('getMigrationStatus', () => {
 
   it('should connect to database with correct credentials', async () => {
     // Mock filesystem
-    mockReaddir.mockResolvedValue(['1_init.sql'] as any)
+    mockReaddir.mockResolvedValue(['1_init.sql'])
     mockReadFile.mockResolvedValue('CREATE TABLE test (id Int32);')
 
     mockClient.query.mockResolvedValue({
-      json: (jest.fn() as any).mockResolvedValue([]),
+      json: vi.fn().mockResolvedValue([]),
     })
 
     const config = createConfig({
@@ -281,22 +282,22 @@ describe('getMigrationStatus', () => {
 
   it('should handle timeout configuration', async () => {
     // Mock filesystem
-    mockReaddir.mockResolvedValue(['1_init.sql'] as any)
+    mockReaddir.mockResolvedValue(['1_init.sql'])
     mockReadFile.mockResolvedValue('CREATE TABLE test (id Int32);')
 
     mockClient.query.mockResolvedValue({
-      json: (jest.fn() as any).mockResolvedValue([]),
+      json: vi.fn().mockResolvedValue([]),
     })
 
     const config = createConfig({
-      timeout: '60000',
+      timeout: MIGRATION_WITH_TLS_TIMEOUT,
     })
 
     await getMigrationStatus(config)
 
     expect(mockCreateClient).toHaveBeenCalledWith(
       expect.objectContaining({
-        request_timeout: 60000,
+        request_timeout: MIGRATION_WITH_TLS_TIMEOUT,
       }),
     )
   })

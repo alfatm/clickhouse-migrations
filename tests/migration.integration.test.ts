@@ -1,31 +1,28 @@
-import { describe, expect, it, jest } from '@jest/globals'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { runMigration } from '../src/migrate'
+import { createMockClickHouseClient } from './helpers/mockClickHouseClient'
+import { setupIntegrationTest, cleanupTest } from './helpers/testSetup'
 
-jest.mock('@clickhouse/client', () => ({ createClient: () => createClient1 }))
+const { mockClient, mockQuery, mockExec, mockInsert, mockClose } = createMockClickHouseClient()
 
-const createClient1 = {
-  query: jest.fn(() => Promise.resolve({ json: () => [] })),
-  exec: jest.fn(() => Promise.resolve({})),
-  insert: jest.fn(() => Promise.resolve({})),
-  close: jest.fn(() => Promise.resolve()),
-  ping: jest.fn(() => Promise.resolve()),
-}
+vi.mock('@clickhouse/client', () => ({
+  createClient: vi.fn(() => mockClient),
+}))
 
 describe('Migration tests', () => {
-  // beforeEach(() => {
-  //   jest.clearAllMocks();
-  //   jest.resetAllMocks();
-  //   jest.resetModules();
-  // });
+  beforeEach(() => {
+    setupIntegrationTest({ mockQuery, mockExec, mockInsert, mockClose })
+  })
+
+  afterEach(() => {
+    cleanupTest()
+  })
 
   it('First migration', async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const querySpy = jest.spyOn(createClient1, 'query') as jest.MockedFunction<any>
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const execSpy = jest.spyOn(createClient1, 'exec') as jest.MockedFunction<any>
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const insertSpy = jest.spyOn(createClient1, 'insert') as jest.MockedFunction<any>
+    const querySpy = vi.spyOn(mockClient, 'query')
+    const execSpy = vi.spyOn(mockClient, 'exec')
+    const insertSpy = vi.spyOn(mockClient, 'insert')
 
     await runMigration({
       migrationsHome: 'tests/migrations/one',

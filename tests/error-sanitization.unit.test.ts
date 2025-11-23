@@ -1,26 +1,5 @@
-import { describe, expect, it } from '@jest/globals'
-
-// We need to test the sanitizeErrorMessage function, but it's not exported.
-// We'll test it indirectly through the error messages that use it.
-// For direct testing, we'll create a test version here.
-
-const sanitizeErrorMessage = (message: string): string => {
-  // Remove passwords from URLs (http://user:password@host -> http://user:[REDACTED]@host)
-  // Match protocol://user:password@host pattern
-  // This handles special characters by matching non-whitespace after the colon until @
-  let sanitized = message.replace(/((?:https?|clickhouse):\/\/[^:/@\s]+:)([^@\s]+)(@)/gi, '$1[REDACTED]$3')
-
-  // Remove passwords from connection strings (password=xxx, password='xxx', password: xxx)
-  sanitized = sanitized.replace(/(password\s*[:=]\s*['"]?)([^'",\s}]+)(['"]?)/gi, '$1[REDACTED]$3')
-
-  // Remove authorization headers (handles "Bearer token" and similar patterns)
-  sanitized = sanitized.replace(/(authorization\s*[:=]\s*)(['"]?)([^\s'",}]+)(['"]?)/gi, '$1$2[REDACTED]$4')
-
-  // Remove basic auth tokens
-  sanitized = sanitized.replace(/(basic\s+)([a-zA-Z0-9+/]+=*)/gi, '$1[REDACTED]')
-
-  return sanitized
-}
+import { describe, expect, it } from 'vitest'
+import { sanitizeErrorMessage } from '../src/migrate'
 
 describe('Error Message Sanitization', () => {
   describe('URL password sanitization', () => {

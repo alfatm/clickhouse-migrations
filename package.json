@@ -38,16 +38,19 @@
   "scripts": {
     "preinstall": "npx only-allow bun",
     "build": "rm lib/*; tsc",
-    "test": "jest --config jestconfig.json",
-    "test:unit": "jest --config jestconfig.json --testPathPatterns=\"\\.(unit)\\.test\\.ts$\"",
-    "test:integration": "jest --config jestconfig.json --testPathPatterns=\"\\.(integration)\\.test\\.ts$\"",
-    "test:e2e": "jest --config jestconfig.json --testPathPatterns=\"\\.e2e\\.test\\.ts$\"",
+    "test": "vitest run",
+    "test:unit": "vitest run tests/*.unit.test.ts",
+    "test:integration": "vitest run tests/*.integration.test.ts",
+    "test:e2e": "vitest run tests/*.e2e.test.ts",
+    "test:watch": "vitest",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest run --coverage",
     "format": "biome format --write ./src",
     "format:tests": "biome format --write ./tests",
     "lint": "biome lint ./src",
     "check": "biome check --write ./src",
     "prepare": "bun run build",
-    "prepublishOnly": "bun test && bun run check",
+    "prepublishOnly": "bun run test && bun run check",
     "preversion": "bun run check",
     "version": "bun run format && git add -A src",
     "postversion": "git push && git push --tags"
@@ -58,11 +61,11 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.3.7",
-    "@types/jest": "^30.0.0",
     "@types/node": "^24.2.1",
-    "jest": "^30.0.5",
-    "ts-jest": "^29.4.1",
-    "typescript": "^5.9.2"
+    "@vitest/coverage-v8": "4.0.13",
+    "@vitest/ui": "^4.0.13",
+    "typescript": "^5.9.2",
+    "vitest": "^4.0.13"
   },
   "files": [
     "lib/**/*"

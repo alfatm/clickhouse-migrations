@@ -1,25 +1,26 @@
-import { describe, expect, it, jest } from '@jest/globals'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { runMigration } from '../src/migrate'
+import { createMockClickHouseClient } from './helpers/mockClickHouseClient'
+import { setupIntegrationTest, cleanupTest } from './helpers/testSetup'
 
-jest.mock('@clickhouse/client', () => ({ createClient: () => createClient1 }))
+const { mockClient, mockQuery, mockExec, mockInsert, mockClose } = createMockClickHouseClient()
 
-const createClient1 = {
-  query: jest.fn(() => Promise.resolve({ json: () => [] })),
-  exec: jest.fn(() => Promise.resolve({})),
-  insert: jest.fn(() => Promise.resolve({})),
-  close: jest.fn(() => Promise.resolve()),
-  ping: jest.fn(() => Promise.resolve()),
-}
+vi.mock('@clickhouse/client', () => ({
+  createClient: vi.fn(() => mockClient),
+}))
 
 describe('Table engine configuration tests', () => {
   beforeEach(() => {
-    jest.clearAllMocks()
+    setupIntegrationTest({ mockQuery, mockExec, mockInsert, mockClose })
+  })
+
+  afterEach(() => {
+    cleanupTest()
   })
 
   it('Should create _migrations table with default MergeTree engine', async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const execSpy = jest.spyOn(createClient1, 'exec') as jest.MockedFunction<any>
+    const execSpy = vi.spyOn(mockClient, 'exec')
 
     await runMigration({
       migrationsHome: 'tests/migrations/one',
@@ -49,8 +50,7 @@ describe('Table engine configuration tests', () => {
   })
 
   it('Should create _migrations table with custom ReplicatedMergeTree engine', async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const execSpy = jest.spyOn(createClient1, 'exec') as jest.MockedFunction<any>
+    const execSpy = vi.spyOn(mockClient, 'exec')
 
     const customEngine = "ReplicatedMergeTree('/clickhouse/tables/{database}/migrations', '{replica}')"
 
@@ -83,8 +83,7 @@ describe('Table engine configuration tests', () => {
   })
 
   it('Should create _migrations table with SharedMergeTree engine for cloud', async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const execSpy = jest.spyOn(createClient1, 'exec') as jest.MockedFunction<any>
+    const execSpy = vi.spyOn(mockClient, 'exec')
 
     const cloudEngine = 'SharedMergeTree'
 

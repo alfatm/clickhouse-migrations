@@ -1,54 +1,34 @@
-import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { runMigration } from '../src/migrate'
+import { createMockClickHouseClient } from './helpers/mockClickHouseClient'
+import { setupIntegrationTest, cleanupTest, setupConsoleSpy } from './helpers/testSetup'
 
-// Mock the ClickHouse client module
-const mockQuery = jest.fn()
-const mockExec = jest.fn()
-const mockInsert = jest.fn()
-const mockClose = jest.fn()
-const mockPing = jest.fn()
+const { mockClient, mockQuery, mockExec, mockInsert, mockClose, mockPing } = createMockClickHouseClient()
 
-jest.mock('@clickhouse/client', () => ({
-  createClient: jest.fn(() => ({
-    query: mockQuery,
-    exec: mockExec,
-    insert: mockInsert,
-    close: mockClose,
-    ping: mockPing,
-  })),
+vi.mock('@clickhouse/client', () => ({
+  createClient: vi.fn(() => mockClient),
 }))
 
 describe('Divergent migration tests with abort_divergent flag', () => {
-  let consoleErrorSpy: jest.SpiedFunction<typeof console.error>
-  let consoleLogSpy: jest.SpiedFunction<typeof console.log>
+  let consoleSpy: ReturnType<typeof setupConsoleSpy>
 
   beforeEach(() => {
-    jest.clearAllMocks()
+    setupIntegrationTest({ mockQuery, mockExec, mockInsert, mockClose })
+    consoleSpy = setupConsoleSpy()
 
-    consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined)
-    consoleLogSpy = jest.spyOn(console, 'log').mockImplementation(() => undefined)
-
-    // Setup default mock implementations
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(mockPing as any).mockResolvedValue({})
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(mockExec as any).mockResolvedValue({})
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(mockInsert as any).mockResolvedValue({})
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(mockClose as any).mockResolvedValue(undefined)
+    // Additional mock for ping
+    mockPing.mockResolvedValue({})
   })
 
   afterEach(() => {
-    consoleErrorSpy.mockRestore()
-    consoleLogSpy.mockRestore()
+    consoleSpy.restore()
+    cleanupTest()
   })
 
   it('Should fail with abort_divergent=true when migration checksum differs', async () => {
     // Mock query to return an applied migration with different checksum
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(mockQuery as any).mockResolvedValueOnce({
+    mockQuery.mockResolvedValueOnce({
       json: () => Promise.resolve([{ version: 1, checksum: 'old_checksum_value', migration_name: '1_init.sql' }]),
     })
 
@@ -69,8 +49,7 @@ describe('Divergent migration tests with abort_divergent flag', () => {
 
   it('Should continue with warning when abort_divergent=false and checksum differs', async () => {
     // Mock query to return an applied migration with different checksum
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(mockQuery as any).mockResolvedValueOnce({
+    mockQuery.mockResolvedValueOnce({
       json: () => Promise.resolve([{ version: 1, checksum: 'old_checksum_value', migration_name: '1_init.sql' }]),
     })
 
@@ -85,14 +64,14 @@ describe('Divergent migration tests with abort_divergent flag', () => {
     })
 
     // Should log warning message
-    expect(consoleLogSpy).toHaveBeenCalledWith(
+    expect(consoleSpy.consoleLogSpy).toHaveBeenCalledWith(
       '\x1b[33m',
       '  Warning: applied migration 1_init.sql has different checksum than the file on filesystem. Continuing due to --abort-divergent=false.',
       '\x1b[0m',
     )
 
     // Should also log success message for no new migrations
-    expect(consoleLogSpy).toHaveBeenCalledWith(
+    expect(consoleSpy.consoleLogSpy).toHaveBeenCalledWith(
       '\x1b[36m',
       'clickhouse-migrations :',
       '\x1b[0m',

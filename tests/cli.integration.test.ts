@@ -1,13 +1,5 @@
-import exec from 'node:child_process'
-import { describe, expect, it, jest } from '@jest/globals'
-
-const execute = async (script: string, options: exec.ExecOptions) => {
-  return new Promise<{ error: exec.ExecException | null; stdout: string; stderr: string }>((resolve) => {
-    exec.exec(script, options, (error, stdout, stderr) => {
-      resolve({ error, stdout: stdout.toString(), stderr: stderr.toString() })
-    })
-  })
-}
+import { describe, expect, it } from 'vitest'
+import { execute } from './helpers/cliHelper'
 
 const envVars = {
   CH_MIGRATIONS_HOST: 'http://sometesthost:8123',
@@ -18,9 +10,6 @@ const envVars = {
 }
 
 describe('Execution tests', () => {
-  beforeEach(() => {
-    jest.resetModules()
-  })
 
   it('No parameters provided', async () => {
     const result = await execute('node lib/cli.js migrate', { cwd: '.' })

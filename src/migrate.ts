@@ -117,9 +117,20 @@ const getErrorMessage = (error: unknown): string => {
   return isQueryError(error) ? error.message : String(error)
 }
 
-// Sanitizes error messages to prevent leaking sensitive information like passwords
-// Removes potential credentials from URLs and connection strings
-const sanitizeErrorMessage = (message: string): string => {
+/**
+ * Sanitizes error messages to prevent leaking sensitive information like passwords.
+ * Removes potential credentials from URLs and connection strings.
+ *
+ * @param message - The error message to sanitize
+ * @returns The sanitized error message with credentials redacted
+ *
+ * @example
+ * ```typescript
+ * sanitizeErrorMessage('Failed to connect to http://user:password@localhost')
+ * // Returns: 'Failed to connect to http://user:[REDACTED]@localhost'
+ * ```
+ */
+export const sanitizeErrorMessage = (message: string): string => {
   // Remove passwords from URLs (http://user:password@host -> http://user:[REDACTED]@host)
   // Match protocol://user:password@host pattern
   // This handles special characters by matching non-whitespace after the colon until @

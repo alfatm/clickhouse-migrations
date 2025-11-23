@@ -1,21 +1,10 @@
-import exec from 'node:child_process'
 import fs from 'node:fs'
-import path from 'node:path'
-import { describe, expect, it } from '@jest/globals'
-
-const execute = async (script: string, options: exec.ExecOptions) => {
-  return new Promise<{ error: exec.ExecException | null; stdout: string; stderr: string }>((resolve) => {
-    exec.exec(script, options, (error, stdout, stderr) => {
-      resolve({ error, stdout: stdout.toString(), stderr: stderr.toString() })
-    })
-  })
-}
+import { describe, expect, it } from 'vitest'
+import { execute } from './helpers/cliHelper'
+import { getTLSCertificatePaths } from './helpers/tlsHelper'
 
 describe('TLS Certificate Support Tests', () => {
-  const certFixturesPath = path.join(__dirname, '..', '.docker', 'clickhouse_tls', 'certificates')
-  const caCertPath = path.join(certFixturesPath, 'ca.crt')
-  const clientCertPath = path.join(certFixturesPath, 'client.crt')
-  const clientKeyPath = path.join(certFixturesPath, 'client.key')
+  const { caCertPath, clientCertPath, clientKeyPath } = getTLSCertificatePaths()
 
   describe('CLI certificate options parsing', () => {
     it('should parse ca_cert command line option without syntax errors', async () => {

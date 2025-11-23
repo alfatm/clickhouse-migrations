@@ -1,32 +1,38 @@
 import * as fs from 'node:fs'
-import * as path from 'node:path'
-import { describe, expect, it, jest } from '@jest/globals'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { MIGRATION_WITH_TLS_TIMEOUT, MIGRATION_WITH_TLS_TIMEOUT } from './helpers/testConstants'
+import { getTLSCertificatePaths } from './helpers/tlsHelper'
+import { cleanupTest } from './helpers/testSetup'
 
 // Mock the ClickHouse client to capture the connection parameters
-const mockCreateClient = jest.fn()
-const mockClickHouseClient = {
-  query: jest.fn(() => Promise.resolve({ json: () => [] })),
-  exec: jest.fn(() => Promise.resolve({})),
-  insert: jest.fn(() => Promise.resolve({})),
-  close: jest.fn(() => Promise.resolve()),
-  ping: jest.fn(() => Promise.resolve()),
-}
+const { mockCreateClient, mockClickHouseClient } = vi.hoisted(() => {
+  const mockClickHouseClient = {
+    query: vi.fn(() => Promise.resolve({ json: () => [] })),
+    exec: vi.fn(() => Promise.resolve({})),
+    insert: vi.fn(() => Promise.resolve({})),
+    close: vi.fn(() => Promise.resolve()),
+    ping: vi.fn(() => Promise.resolve()),
+  }
+  const mockCreateClient = vi.fn(() => mockClickHouseClient)
+  return { mockCreateClient, mockClickHouseClient }
+})
 
-jest.mock('@clickhouse/client', () => ({
+vi.mock('@clickhouse/client', () => ({
   createClient: mockCreateClient.mockReturnValue(mockClickHouseClient),
 }))
 
 import { runMigration } from '../src/migrate'
 
 describe('TLS Configuration Unit Tests', () => {
-  const certFixturesPath = path.join(__dirname, '..', '.docker', 'clickhouse_tls', 'certificates')
-  const caCertPath = path.join(certFixturesPath, 'ca.crt')
-  const clientCertPath = path.join(certFixturesPath, 'client.crt')
-  const clientKeyPath = path.join(certFixturesPath, 'client.key')
+  const { caCertPath, clientCertPath, clientKeyPath } = getTLSCertificatePaths()
 
   beforeEach(() => {
-    jest.clearAllMocks()
+    vi.clearAllMocks()
     mockCreateClient.mockReturnValue(mockClickHouseClient)
+  })
+
+  afterEach(() => {
+    cleanupTest()
   })
 
   describe('TLS configuration building', () => {
@@ -42,10 +48,11 @@ describe('TLS Configuration Unit Tests', () => {
       })
 
       // Verify createClient was called without TLS configuration
-      const calls = mockCreateClient.mock.calls as Array<[Record<string, unknown>]>
-      expect(calls.length).toBeGreaterThan(0)
+      expect(mockCreateClient).toHaveBeenCalled()
 
       // Check that none of the calls include TLS configuration
+      type CallArgs = [config?: Record<string, unknown>]
+      const calls = mockCreateClient.mock.calls as CallArgs[]
       calls.forEach((call) => {
         expect(call[0]).not.toHaveProperty('tls')
       })
@@ -60,26 +67,27 @@ describe('TLS Configuration Unit Tests', () => {
         dbName: 'analytics',
         dbEngine: 'ENGINE=Atomic',
         tableEngine: 'MergeTree',
-        timeout: '30000',
+        timeout: MIGRATION_WITH_TLS_TIMEOUT,
         caCert: caCertPath,
         abortDivergent: true,
         createDatabase: true,
       })
 
       // Verify createClient was called with TLS configuration containing only CA cert
-      const calls = mockCreateClient.mock.calls as Array<[Record<string, unknown>]>
+      type CallArgs = [config?: Record<string, unknown>]
+      const calls = mockCreateClient.mock.calls as CallArgs[]
       expect(calls.length).toBeGreaterThan(0)
 
-      const tlsCalls = calls.filter((call) => call[0].tls)
+      const tlsCalls = calls.filter((call) => call[0] && 'tls' in call[0])
       expect(tlsCalls.length).toBeGreaterThan(0)
 
       tlsCalls.forEach((call) => {
-        const tlsConfig = call[0].tls as Record<string, unknown>
-        expect(tlsConfig).toHaveProperty('ca_cert')
-        expect(tlsConfig.ca_cert).toBeInstanceOf(Buffer)
+        const config = call[0] as { tls: Record<string, unknown> }
+        expect(config.tls).toHaveProperty('ca_cert')
+        expect(config.tls.ca_cert).toBeInstanceOf(Buffer)
         // Should not have client cert/key when only CA is provided
-        expect(tlsConfig).not.toHaveProperty('cert')
-        expect(tlsConfig).not.toHaveProperty('key')
+        expect(config.tls).not.toHaveProperty('cert')
+        expect(config.tls).not.toHaveProperty('key')
       })
     })
 
@@ -92,7 +100,7 @@ describe('TLS Configuration Unit Tests', () => {
         dbName: 'analytics',
         dbEngine: 'ENGINE=Atomic',
         tableEngine: 'MergeTree',
-        timeout: '30000',
+        timeout: MIGRATION_WITH_TLS_TIMEOUT,
         caCert: caCertPath,
         cert: clientCertPath,
         key: clientKeyPath,
@@ -101,21 +109,22 @@ describe('TLS Configuration Unit Tests', () => {
       })
 
       // Verify createClient was called with complete TLS configuration
-      const calls = mockCreateClient.mock.calls as Array<[Record<string, unknown>]>
+      type CallArgs = [config?: Record<string, unknown>]
+      const calls = mockCreateClient.mock.calls as CallArgs[]
       expect(calls.length).toBeGreaterThan(0)
 
-      const tlsCalls = calls.filter((call) => call[0].tls)
+      const tlsCalls = calls.filter((call) => call[0] && 'tls' in call[0])
       expect(tlsCalls.length).toBeGreaterThan(0)
 
       tlsCalls.forEach((call) => {
-        const tlsConfig = call[0].tls as Record<string, Buffer>
-        expect(tlsConfig).toHaveProperty('ca_cert')
-        expect(tlsConfig).toHaveProperty('cert')
-        expect(tlsConfig).toHaveProperty('key')
+        const config = call[0] as { tls: Record<string, Buffer> }
+        expect(config.tls).toHaveProperty('ca_cert')
+        expect(config.tls).toHaveProperty('cert')
+        expect(config.tls).toHaveProperty('key')
 
-        expect(tlsConfig.ca_cert).toBeInstanceOf(Buffer)
-        expect(tlsConfig.cert).toBeInstanceOf(Buffer)
-        expect(tlsConfig.key).toBeInstanceOf(Buffer)
+        expect(config.tls.ca_cert).toBeInstanceOf(Buffer)
+        expect(config.tls.cert).toBeInstanceOf(Buffer)
+        expect(config.tls.key).toBeInstanceOf(Buffer)
       })
     })
 
@@ -128,7 +137,7 @@ describe('TLS Configuration Unit Tests', () => {
         dbName: 'analytics',
         dbEngine: 'ON CLUSTER production ENGINE=Replicated',
         tableEngine: 'MergeTree',
-        timeout: '60000',
+        timeout: MIGRATION_WITH_TLS_TIMEOUT,
         caCert: caCertPath,
         cert: clientCertPath,
         key: clientKeyPath,
@@ -136,9 +145,10 @@ describe('TLS Configuration Unit Tests', () => {
         createDatabase: true,
       })
 
-      const calls = mockCreateClient.mock.calls as Array<[Record<string, unknown>]>
-      const dbCreationCall = calls.find((call) => !call[0].database)
-      const migrationCall = calls.find((call) => call[0].database)
+      type CallArgs = [config?: Record<string, unknown>]
+      const calls = mockCreateClient.mock.calls as CallArgs[]
+      const dbCreationCall = calls.find((call) => call[0] && !('database' in call[0]))
+      const migrationCall = calls.find((call) => call[0] && 'database' in call[0])
 
       // Verify database creation call
       expect(dbCreationCall).toBeDefined()
@@ -147,7 +157,7 @@ describe('TLS Configuration Unit Tests', () => {
         username: 'default',
         password: 'password',
         application: 'clickhouse-migrations',
-        request_timeout: 60000,
+        request_timeout: MIGRATION_WITH_TLS_TIMEOUT,
       })
       expect(dbCreationCall?.[0]).toHaveProperty('tls')
 
@@ -159,7 +169,7 @@ describe('TLS Configuration Unit Tests', () => {
         password: 'password',
         database: 'analytics',
         application: 'clickhouse-migrations',
-        request_timeout: 60000,
+        request_timeout: MIGRATION_WITH_TLS_TIMEOUT,
       })
       expect(migrationCall?.[0]).toHaveProperty('tls')
     })
@@ -175,7 +185,7 @@ describe('TLS Configuration Unit Tests', () => {
         dbName: 'analytics',
         dbEngine: 'ENGINE=Atomic',
         tableEngine: 'MergeTree',
-        timeout: '30000',
+        timeout: MIGRATION_WITH_TLS_TIMEOUT,
         caCert: caCertPath,
         cert: clientCertPath,
         key: clientKeyPath,
@@ -183,11 +193,13 @@ describe('TLS Configuration Unit Tests', () => {
         createDatabase: true,
       })
 
-      const calls = mockCreateClient.mock.calls as Array<[Record<string, unknown>]>
-      const tlsCall = calls.find((call) => call[0].tls)
+      type CallArgs = [config?: Record<string, unknown>]
+      const calls = mockCreateClient.mock.calls as CallArgs[]
+      const tlsCall = calls.find((call) => call[0] && 'tls' in call[0])
 
       expect(tlsCall).toBeDefined()
-      const tlsConfig = tlsCall?.[0].tls as Record<string, Buffer>
+      const config = tlsCall?.[0] as { tls: Record<string, Buffer> } | undefined
+      const tlsConfig = config?.tls
 
       // Read expected certificate content
       const expectedCaCert = fs.readFileSync(caCertPath)
@@ -195,9 +207,10 @@ describe('TLS Configuration Unit Tests', () => {
       const expectedClientKey = fs.readFileSync(clientKeyPath)
 
       // Verify the content matches what was read from files
-      expect(tlsConfig.ca_cert).toEqual(expectedCaCert)
-      expect(tlsConfig.cert).toEqual(expectedClientCert)
-      expect(tlsConfig.key).toEqual(expectedClientKey)
+      expect(tlsConfig).toBeDefined()
+      expect(tlsConfig?.ca_cert).toEqual(expectedCaCert)
+      expect(tlsConfig?.cert).toEqual(expectedClientCert)
+      expect(tlsConfig?.key).toEqual(expectedClientKey)
     })
   })
 
@@ -211,7 +224,7 @@ describe('TLS Configuration Unit Tests', () => {
         dbName: 'analytics',
         dbEngine: 'ENGINE=Atomic',
         tableEngine: 'MergeTree',
-        timeout: '30000',
+        timeout: MIGRATION_WITH_TLS_TIMEOUT,
         caCert: caCertPath,
         abortDivergent: true,
         createDatabase: true,
@@ -220,14 +233,15 @@ describe('TLS Configuration Unit Tests', () => {
       // Should have exactly 2 calls: one for DB creation, one for migrations
       expect(mockCreateClient).toHaveBeenCalledTimes(2)
 
-      const calls = mockCreateClient.mock.calls as Array<[Record<string, unknown>]>
+      type CallArgs = [config?: Record<string, unknown>]
+      const calls = mockCreateClient.mock.calls as CallArgs[]
 
       // Both calls should have TLS configuration
       calls.forEach((call) => {
         expect(call[0]).toHaveProperty('tls')
-        const tlsConfig = call[0].tls as Record<string, Buffer>
-        expect(tlsConfig).toHaveProperty('ca_cert')
-        expect(tlsConfig.ca_cert).toBeInstanceOf(Buffer)
+        const config = call[0] as { tls: Record<string, Buffer> }
+        expect(config.tls).toHaveProperty('ca_cert')
+        expect(config.tls.ca_cert).toBeInstanceOf(Buffer)
       })
 
       // First call should be for database creation (no database specified)

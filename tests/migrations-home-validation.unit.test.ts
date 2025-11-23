@@ -1,4 +1,4 @@
-import { describe, expect, it } from '@jest/globals'
+import { describe, expect, it } from 'vitest'
 import { getMigrationStatus, runMigration } from '../src/migrate'
 
 describe('Migrations Home Path Validation', () => {
@@ -79,81 +79,112 @@ describe('Migrations Home Path Validation', () => {
   })
 
   describe('System directory protection', () => {
-    it('should reject /etc directory', async () => {
-      await expect(
-        runMigration({
-          host: 'http://localhost:8123',
-          migrationsHome: '/etc',
-          createDatabase: false,
-        }),
-      ).rejects.toThrow("operations on system directory '/etc' are not allowed")
+    describe('Unix system directories', () => {
+      it('should reject /etc directory', async () => {
+        await expect(
+          runMigration({
+            host: 'http://localhost:8123',
+            migrationsHome: '/etc',
+            createDatabase: false,
+          }),
+        ).rejects.toThrow("operations on system directory '/etc' are not allowed")
+      })
+
+      it('should reject /etc subdirectory', async () => {
+        await expect(
+          runMigration({
+            host: 'http://localhost:8123',
+            migrationsHome: '/etc/nginx',
+            createDatabase: false,
+          }),
+        ).rejects.toThrow("operations on system directory '/etc' are not allowed")
+      })
+
+      it('should reject /sys directory', async () => {
+        await expect(
+          getMigrationStatus({
+            host: 'http://localhost:8123',
+            migrationsHome: '/sys',
+          }),
+        ).rejects.toThrow("operations on system directory '/sys' are not allowed")
+      })
+
+      it('should reject /root directory', async () => {
+        await expect(
+          runMigration({
+            host: 'http://localhost:8123',
+            migrationsHome: '/root',
+            createDatabase: false,
+          }),
+        ).rejects.toThrow("operations on system directory '/root' are not allowed")
+      })
+
+      it('should reject /usr/bin directory', async () => {
+        await expect(
+          getMigrationStatus({
+            host: 'http://localhost:8123',
+            migrationsHome: '/usr/bin',
+          }),
+        ).rejects.toThrow("operations on system directory '/usr/bin' are not allowed")
+      })
     })
 
-    it('should reject /etc subdirectory', async () => {
-      await expect(
-        runMigration({
-          host: 'http://localhost:8123',
-          migrationsHome: '/etc/nginx',
-          createDatabase: false,
-        }),
-      ).rejects.toThrow("operations on system directory '/etc' are not allowed")
-    })
-
-    it('should reject /sys directory', async () => {
-      await expect(
-        getMigrationStatus({
-          host: 'http://localhost:8123',
-          migrationsHome: '/sys',
-        }),
-      ).rejects.toThrow("operations on system directory '/sys' are not allowed")
-    })
-
-    it('should reject /root directory', async () => {
-      await expect(
-        runMigration({
-          host: 'http://localhost:8123',
-          migrationsHome: '/root',
-          createDatabase: false,
-        }),
-      ).rejects.toThrow("operations on system directory '/root' are not allowed")
-    })
-
-    it('should reject /usr/bin directory', async () => {
-      await expect(
-        getMigrationStatus({
-          host: 'http://localhost:8123',
-          migrationsHome: '/usr/bin',
-        }),
-      ).rejects.toThrow("operations on system directory '/usr/bin' are not allowed")
-    })
-
-    it('should reject Windows system directory C:\\Windows', async () => {
-      await expect(
-        runMigration({
+    describe('Windows system directories', () => {
+      it('should reject Windows system directory C:\\Windows', async () => {
+        const promise = runMigration({
           host: 'http://localhost:8123',
           migrationsHome: 'C:\\Windows\\System32',
           createDatabase: false,
-        }),
-      ).rejects.toThrow(/operations on Windows system directories are not allowed|No migration directory/)
-    })
+        })
 
-    it('should reject Windows system directory (lowercase)', async () => {
-      await expect(
-        getMigrationStatus({
+        // On Windows: should reject with Windows-specific error
+        // On Unix: path resolves differently, may reject with different error
+        await expect(promise).rejects.toThrow()
+
+        await promise.catch((error) => {
+          expect(
+            error.message.includes('operations on Windows system directories are not allowed') ||
+            error.message.includes('No migration directory')
+          ).toBe(true)
+        })
+      })
+
+      it('should reject Windows system directory (lowercase)', async () => {
+        const promise = getMigrationStatus({
           host: 'http://localhost:8123',
           migrationsHome: 'c:\\windows\\temp',
-        }),
-      ).rejects.toThrow(/operations on Windows system directories are not allowed|No migration directory/)
-    })
+        })
 
-    it('should reject Windows Program Files', async () => {
-      await expect(
-        runMigration({
+        // On Windows: should reject with Windows-specific error
+        // On Unix: path resolves differently, may reject with different error
+        await expect(promise).rejects.toThrow()
+
+        await promise.catch((error) => {
+          expect(
+            error.message.includes('operations on Windows system directories are not allowed') ||
+            error.message.includes('No migration directory')
+          ).toBe(true)
+        })
+      })
+
+      it('should reject Windows Program Files', async () => {
+        const promise = runMigration({
           host: 'http://localhost:8123',
           migrationsHome: 'C:\\Program Files\\App',
           createDatabase: false,
-        }),
-      ).rejects.toThrow(/operations on Windows system directories are not allowed|No migration directory/)
+        })
+
+        // On Windows: should reject with Windows-specific error
+        // On Unix: path resolves differently, may reject with different error
+        await expect(promise).rejects.toThrow()
+
+        await promise.catch((error) => {
+          expect(
+            error.message.includes('operations on Windows system directories are not allowed') ||
+            error.message.includes('No migration directory')
+          ).toBe(true)
+        })
+      })
     })
   })
 
