@@ -37,16 +37,27 @@
 ## Installation
 
 ```sh
+# Using Bun (recommended)
 bun add clickhouse-migrations
+
+# Or using npm
+npm install clickhouse-migrations
+
+# Or using yarn
+yarn add clickhouse-migrations
 ```
 
 Or install globally:
 
 ```sh
+# Using Bun (recommended)
 bun add -g clickhouse-migrations
+
+# Or using npm
+npm install -g clickhouse-migrations
 ```
 
-> **Note:** This project uses [Bun](https://bun.sh) as its package manager and runtime. npm, yarn, and pnpm are not supported.
+> **Note:** While end users can install this package with any package manager, **development requires [Bun](https://bun.sh) >= 1.2.23**. See the [Development](#development) section for details.
 
 ## Quick Start
 
@@ -264,23 +275,23 @@ CH_MIGRATIONS_DSN=clickhouse://user:password@localhost:8123/mydb
 CH_MIGRATIONS_HOME=/app/migrations
 ```
 
-**Individual parameters override DSN:**
+**IMPORTANT: DSN and individual parameters cannot be mixed:**
 
-If you specify both DSN and individual parameters, the individual parameters take precedence:
+You must use **either** DSN **or** individual connection parameters, but **not both**. Mixing them will result in an error:
 
 ```sh
-# DSN provides base configuration
+# This will throw an error:
 clickhouse-migrations migrate \
   --dsn="clickhouse://user:password@localhost:8123/dev_db" \
   --db=production_db \
   --migrations-home=./migrations
-# Will connect to production_db instead of dev_db
+# Error: Configuration conflict: provide either --dsn OR separate parameters (--host, --user, --password, --db), but not both
 ```
 
-This is useful for:
-- Using DSN from environment for base config
-- Overriding specific values for different environments
-- Testing with different databases without changing DSN
+Choose one approach:
+- Use DSN alone for all connection parameters
+- Use individual flags (--host, --user, --password, --db) alone
+- Do not combine them
 
 **Using ClickHouse settings in DSN:**
 
@@ -408,11 +419,11 @@ clickhouse-migrations status [options]
 
 ### Connection Options
 
-You must specify connection parameters either via DSN **OR** individual options, but not both:
+Connection parameters can be specified via DSN or individual options:
 
 | Option              | Environment Variable     | Required | Default          | Description                                                                                                               | Example                               |
 | ------------------- | ------------------------ | -------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
-| `--dsn`             | `CH_MIGRATIONS_DSN`      | No*      | -                | Connection DSN (use **either** this **or** separate parameters)                                                           | `clickhouse://user:pass@host:8123/db` |
+| `--dsn`             | `CH_MIGRATIONS_DSN`      | No*      | -                | Connection DSN (cannot be combined with individual connection parameters)                                                 | `clickhouse://user:pass@host:8123/db` |
 | `--host`            | `CH_MIGRATIONS_HOST`     | Yes*     | -                | ClickHouse server URL                                                                                                     | `http://localhost:8123`               |
 | `--user`            | `CH_MIGRATIONS_USER`     | No       | (none)           | Username (uses [ClickHouse defaults](https://clickhouse.com/docs/operations/settings/settings-users))                     | `default`                             |
 | `--password`        | `CH_MIGRATIONS_PASSWORD` | No       | (none)           | Password (uses [ClickHouse defaults](https://clickhouse.com/docs/operations/settings/settings-users))                     | `mypassword`                          |
@@ -420,7 +431,7 @@ You must specify connection parameters either via DSN **OR** individual options,
 | `--migrations-home` | `CH_MIGRATIONS_HOME`     | Yes      | -                | Migrations directory                                                                                                      | `./migrations`                        |
 
 **Notes:**
-- **IMPORTANT:** You must provide **either** `--dsn` **OR** separate parameters (`--host`, `--user`, `--password`, `--db`), but **NOT BOTH**. Mixing DSN with individual connection parameters will result in an error.
+- **Connection Flexibility:** You must provide **either** `--dsn` alone **or** separate parameters (`--host`, `--user`, `--password`, `--db`) alone. You **cannot mix both** - doing so will result in a configuration error.
 - If `--user` and `--password` are not provided, ClickHouse will use its default authentication mechanism (typically the `default` user with no password for local connections).
 - If `--db` is not specified, the ClickHouse server will automatically use the `default` database.
 
@@ -574,14 +585,17 @@ CH_MIGRATIONS_LOG_PREFIX=my-application
 You can use `clickhouse-migrations` as a library in your Node.js or Bun application:
 
 ```typescript
-import { runMigration } from 'clickhouse-migrations';
+import { runMigration, createLogger } from 'clickhouse-migrations';
 
 async function applyMigrations() {
+  const logger = createLogger();
+
   try {
     // Minimal configuration (uses ClickHouse defaults for authentication)
     await runMigration({
       host: 'http://localhost:8123',
       migrationsHome: './migrations',
+      logger,
     });
     console.log('Migrations applied successfully!');
   } catch (error) {
@@ -592,6 +606,13 @@ async function applyMigrations() {
 
 // With explicit credentials and options
 async function applyMigrationsWithAuth() {
+  // Create logger with custom options
+  const logger = createLogger({
+    format: 'console',  // or 'json'
+    minLevel: 'info',   // 'debug' | 'info' | 'warn' | 'error'
+    prefix: 'my-app',   // custom prefix
+  });
+
   try {
     await runMigration({
       host: 'http://localhost:8123',
@@ -599,6 +620,7 @@ async function applyMigrationsWithAuth() {
       password: 'mypassword',        // Optional: uses ClickHouse server defaults
       dbName: 'myapp',               // Optional: server uses 'default' database if not provided
       migrationsHome: './migrations',
+      logger,
       // Optional parameters
       timeout: '30000',
       tableEngine: 'MergeTree',
@@ -615,10 +637,13 @@ async function applyMigrationsWithAuth() {
 
 // Using DSN
 async function applyMigrationsWithDSN() {
+  const logger = createLogger();
+
   try {
     await runMigration({
       dsn: 'clickhouse://user:password@localhost:8123/myapp',
       migrationsHome: './migrations',
+      logger,
     });
     console.log('Migrations applied successfully!');
   } catch (error) {
@@ -632,15 +657,18 @@ applyMigrations();
 // IMPORTANT: Do NOT mix DSN with individual connection parameters
 // This will throw an error:
 async function invalidConfiguration() {
+  const logger = createLogger();
+
   try {
     await runMigration({
       dsn: 'clickhouse://user:password@localhost:8123/myapp',
       host: 'http://localhost:8123', // ERROR: Cannot use both DSN and separate parameters
       migrationsHome: './migrations',
+      logger,
     });
   } catch (error) {
     console.error('Configuration error:', error);
-    // Error: Configuration conflict: provide either --dsn OR separate parameters
+    // Error: Configuration conflict: provide either --dsn OR separate parameters (--host, --user, --password, --db), but not both
   }
 }
 ```
@@ -649,12 +677,14 @@ async function invalidConfiguration() {
 
 ```typescript
 import type { MigrationRunConfig } from 'clickhouse-migrations';
+import { createLogger } from 'clickhouse-migrations';
 
 // Configuration using separate parameters
 const configSeparate: MigrationRunConfig = {
   // Required
   host: 'http://localhost:8123',
   migrationsHome: './migrations',
+  logger: createLogger(),
 
   // Optional connection
   username: 'default',         // Optional: uses ClickHouse server defaults if not provided
@@ -683,6 +713,7 @@ const configDSN: MigrationRunConfig = {
   // Required
   dsn: 'clickhouse://user:pass@localhost:8123/db',
   migrationsHome: './migrations',
+  logger: createLogger({ format: 'json', minLevel: 'info' }),
 
   // Optional settings
   timeout: '30000',
@@ -703,6 +734,7 @@ const invalidConfig: MigrationRunConfig = {
   dsn: 'clickhouse://user:pass@localhost:8123/db',
   host: 'http://localhost:8123', // ERROR: Cannot use both DSN and separate parameters
   migrationsHome: './migrations',
+  logger: createLogger(),
 };
 ```
 
@@ -774,13 +806,13 @@ bun run test
 Run specific test categories:
 
 ```sh
-# Unit tests only (171 tests)
+# Unit tests only
 bun run test:unit
 
-# Integration tests only (28 tests)
+# Integration tests only
 bun run test:integration
 
-# End-to-end tests only (10 tests)
+# End-to-end tests only
 bun run test:e2e
 ```
 
@@ -829,7 +861,7 @@ bun run lint
 
 Before committing, ensure:
 
-1. All tests pass: `bun test`
+1. All tests pass: `bun run test`
 2. Code is formatted and linted: `bun run check`
 3. Build succeeds: `bun run build`
 
@@ -851,7 +883,7 @@ See [biome.json](biome.json) for the complete configuration.
 ### TypeScript Configuration
 
 - **Target:** ES2022
-- **Module:** CommonJS
+- **Module:** ES2022 (ESM)
 - **Strict Mode:** Enabled with additional strict flags
   - `noImplicitAny`
   - `strictNullChecks`
@@ -890,7 +922,7 @@ node lib/cli.js migrate --host=http://localhost:8123 --migrations-home=./migrati
 1. Write tests first (TDD approach recommended)
 2. Implement the feature in `src/`
 3. Run `bun run check` to ensure code quality
-4. Run `bun test` to verify tests pass
+4. Run `bun run test` to verify tests pass
 5. Update documentation if needed
 
 #### Fixing a Bug
@@ -1259,7 +1291,7 @@ Contributions are welcome! We appreciate your help in making this project better
 3. **Run checks** to ensure code quality:
    ```sh
    bun run check      # Format and lint
-   bun test           # Run all tests
+   bun run test       # Run all tests
    bun run build      # Verify build succeeds
    ```
 4. **Commit your changes** with a clear commit message:
@@ -1291,7 +1323,7 @@ Examples:
 All contributions must:
 
 - Pass Biome linting and formatting checks (`bun run check`)
-- Pass all existing tests (`bun test`)
+- Pass all existing tests (`bun run test`)
 - Include tests for new functionality
 - Follow the existing code style (enforced by Biome)
 - Include appropriate error handling
@@ -1311,7 +1343,7 @@ We welcome contributions in these areas:
 
 ### Before Submitting
 
-- [ ] Tests pass: `bun test`
+- [ ] Tests pass: `bun run test`
 - [ ] Code is formatted: `bun run check`
 - [ ] Build succeeds: `bun run build`
 - [ ] Documentation is updated (if needed)

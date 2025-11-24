@@ -6,6 +6,9 @@ import { setupConnectionConfig } from './dsn-parser'
 import { COLORS, type Logger } from './logger'
 import { sqlQueries, sqlSets } from './sql-parse'
 
+// Re-export logger utilities for programmatic usage
+export { createLogger, type Logger } from './logger'
+
 export type MigrationBase = {
   version: number
   file: string
