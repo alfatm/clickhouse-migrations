@@ -13,6 +13,7 @@ export type CliParameters = {
   db?: string
   dbEngine?: string
   tableEngine?: string
+  migrationTableName?: string
   timeout?: string | number
   caCert?: string
   cert?: string
@@ -85,6 +86,11 @@ export const setupCli = (): Command => {
       process.env.CH_MIGRATIONS_TABLE_ENGINE,
     )
     .option(
+      '--migration-table-name <value>',
+      'Name for the migrations tracking table (default: "_migrations")',
+      process.env.CH_MIGRATIONS_TABLE_NAME,
+    )
+    .option(
       '--timeout <value>',
       'Client request timeout (milliseconds, default value 30000)',
       process.env.CH_MIGRATIONS_TIMEOUT,
@@ -129,6 +135,7 @@ export const setupCli = (): Command => {
           dbName: options.db,
           dbEngine: options.dbEngine,
           tableEngine: options.tableEngine,
+          migrationTableName: options.migrationTableName,
           timeout: options.timeout,
           caCert: options.caCert,
           cert: options.cert,
@@ -160,6 +167,11 @@ export const setupCli = (): Command => {
       '--table-engine <value>',
       'Engine for the _migrations table (default: "MergeTree"). Examples: "ReplicatedMergeTree()" or "ReplicatedMergeTree(\'/clickhouse/tables/{shard}/table_name\', \'{replica}\')"',
       process.env.CH_MIGRATIONS_TABLE_ENGINE,
+    )
+    .option(
+      '--migration-table-name <value>',
+      'Name for the migrations tracking table (default: "_migrations")',
+      process.env.CH_MIGRATIONS_TABLE_NAME,
     )
     .option(
       '--timeout <value>',
@@ -195,6 +207,7 @@ export const setupCli = (): Command => {
           password: options.password,
           dbName: options.db,
           tableEngine: options.tableEngine,
+          migrationTableName: options.migrationTableName,
           timeout: options.timeout,
           caCert: options.caCert,
           cert: options.cert,

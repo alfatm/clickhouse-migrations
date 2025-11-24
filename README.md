@@ -432,6 +432,7 @@ You must specify connection parameters either via DSN **OR** individual options,
 | --- | --- | --- | --- |
 | `--db-engine` | `CH_MIGRATIONS_DB_ENGINE` | `ENGINE=Atomic` | Database engine clause |
 | `--table-engine` | `CH_MIGRATIONS_TABLE_ENGINE` | `MergeTree` | Migration table engine |
+| `--migration-table-name` | `CH_MIGRATIONS_TABLE_NAME` | `_migrations` | Name for migrations tracking table |
 | `--timeout` | `CH_MIGRATIONS_TIMEOUT` | `30000` | Request timeout (ms) |
 | `--ca-cert` | `CH_MIGRATIONS_CA_CERT` | - | CA certificate path |
 | `--cert` | `CH_MIGRATIONS_CERT` | - | Client certificate path |
@@ -447,6 +448,7 @@ You must specify connection parameters either via DSN **OR** individual options,
 | Option | Environment Variable | Default | Description |
 | --- | --- | --- | --- |
 | `--table-engine` | `CH_MIGRATIONS_TABLE_ENGINE` | `MergeTree` | Migration table engine |
+| `--migration-table-name` | `CH_MIGRATIONS_TABLE_NAME` | `_migrations` | Name for migrations tracking table |
 | `--timeout` | `CH_MIGRATIONS_TIMEOUT` | `30000` | Request timeout (ms) |
 | `--ca-cert` | `CH_MIGRATIONS_CA_CERT` | - | CA certificate path |
 | `--cert` | `CH_MIGRATIONS_CERT` | - | Client certificate path |
@@ -600,6 +602,7 @@ async function applyMigrationsWithAuth() {
       // Optional parameters
       timeout: '30000',
       tableEngine: 'MergeTree',
+      migrationTableName: '_migrations',  // Optional: custom migration table name
       abortDivergent: true,
       createDatabase: true,
     });
@@ -662,6 +665,7 @@ const configSeparate: MigrationRunConfig = {
   timeout: '30000',
   dbEngine: 'ENGINE=Atomic',
   tableEngine: 'MergeTree',
+  migrationTableName: '_migrations',  // Optional: custom migration table name
   abortDivergent: true,
   createDatabase: true,
   settings: {                   // ClickHouse query settings
@@ -1206,7 +1210,7 @@ After:  Failed to connect to http://admin:[REDACTED]@localhost:8123
 
 ## Migration Table Structure
 
-The tool automatically creates a `_migrations` table to track applied migrations:
+The tool automatically creates a migrations tracking table (default: `_migrations`) to track applied migrations. You can customize the table name using the `--migration-table-name` option.
 
 ```sql
 CREATE TABLE _migrations (
@@ -1226,6 +1230,15 @@ You can query this table to see migration history:
 SELECT version, migration_name, applied_at
 FROM _migrations
 ORDER BY version;
+```
+
+To use a custom table name:
+
+```sh
+clickhouse-migrations migrate \
+  --host=http://localhost:8123 \
+  --migrations-home=./migrations \
+  --migration-table-name=my_custom_migrations
 ```
 
 ## Contributing

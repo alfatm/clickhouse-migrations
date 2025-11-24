@@ -295,4 +295,3 @@ export const sqlSets = (content: string): Record<string, string> => {
 
 // Aliases for backward compatibility
 export { sqlQueries as sql_queries, sqlSets as sql_sets }
-

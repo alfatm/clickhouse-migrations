@@ -48,6 +48,7 @@ export type MigrationRunConfig = {
   dbName?: string
   dbEngine?: string
   tableEngine?: string
+  migrationTableName?: string
   abortDivergent?: boolean
   createDatabase?: boolean
   settings?: Record<string, string>
@@ -59,6 +60,7 @@ export type MigrationStatusConfig = {
   dsn?: string
   dbName?: string
   tableEngine?: string
+  migrationTableName?: string
   settings?: Record<string, string>
   logger: Logger
 } & ConnectionConfig
@@ -319,7 +321,15 @@ const createDb = async (config: CreateDbConfig): Promise<void> => {
 const initMigrationTable = async (
   client: ClickHouseClient,
   tableEngine: string = DEFAULT_TABLE_ENGINE,
+  tableName: string = MIGRATIONS_TABLE,
 ): Promise<void> => {
+  // SQL injection guard: validates table name
+  const validatedTableName = validate(
+    tableName,
+    VALIDATION_PATTERNS.DB_NAME,
+    'Invalid migration table name. Must start with a letter or underscore, contain only letters, numbers, and underscores, and be max 255 characters.',
+  )
+
   // SQL injection guard: validates MergeTree engine format
   // See: https://clickhouse.com/docs/en/engines/table-engines/
   const validatedEngine = validate(
@@ -328,7 +338,7 @@ const initMigrationTable = async (
     "Invalid table engine. Must match pattern: EngineName[(params)]. Example: ReplicatedMergeTree('/clickhouse/tables/{shard}/table_name', '{replica}')",
   )
 
-  const q = `CREATE TABLE IF NOT EXISTS ${MIGRATIONS_TABLE} (
+  const q = `CREATE TABLE IF NOT EXISTS ${validatedTableName} (
       uid UUID DEFAULT generateUUIDv4(),
       version UInt32,
       checksum String,
@@ -346,7 +356,7 @@ const initMigrationTable = async (
       },
     })
   } catch (e: unknown) {
-    throw new Error(`Can't create the ${MIGRATIONS_TABLE} table: ${getErrorMessage(e)}`)
+    throw new Error(`Can't create the ${validatedTableName} table: ${getErrorMessage(e)}`)
   }
 }
 
@@ -446,10 +456,15 @@ const executeMigrationQueries = async (
   }
 }
 
-const recordMigration = async (client: ClickHouseClient, migration: MigrationBase, checksum: string): Promise<void> => {
+const recordMigration = async (
+  client: ClickHouseClient,
+  migration: MigrationBase,
+  checksum: string,
+  tableName: string = MIGRATIONS_TABLE,
+): Promise<void> => {
   try {
     await client.insert({
-      table: MIGRATIONS_TABLE,
+      table: tableName,
       values: [
         {
           version: migration.version,
@@ -460,21 +475,24 @@ const recordMigration = async (client: ClickHouseClient, migration: MigrationBas
       format: 'JSONEachRow',
     })
   } catch (e: unknown) {
-    throw new Error(`Can't insert data into the ${MIGRATIONS_TABLE} table: ${getErrorMessage(e)}`)
+    throw new Error(`Can't insert data into the ${tableName} table: ${getErrorMessage(e)}`)
   }
 }
 
 // Fetches applied migrations from DB and returns as Map for fast lookups
-const getAppliedMigrations = async (client: ClickHouseClient): Promise<Map<number, MigrationsRowData>> => {
+const getAppliedMigrations = async (
+  client: ClickHouseClient,
+  tableName: string = MIGRATIONS_TABLE,
+): Promise<Map<number, MigrationsRowData>> => {
   let migrationQueryResult: MigrationsRowData[] = []
   try {
     const resultSet = await client.query({
-      query: `SELECT version, checksum, migration_name, applied_at FROM ${MIGRATIONS_TABLE} ORDER BY version`,
+      query: `SELECT version, checksum, migration_name, applied_at FROM ${tableName} ORDER BY version`,
       format: 'JSONEachRow',
     })
     migrationQueryResult = await resultSet.json()
   } catch (e: unknown) {
-    throw new Error(`Can't select data from the ${MIGRATIONS_TABLE} table: ${getErrorMessage(e)}`)
+    throw new Error(`Can't select data from the ${tableName} table: ${getErrorMessage(e)}`)
   }
 
   // Map for O(1) lookups vs O(n) array scans
@@ -498,11 +516,12 @@ const applyMigrations = async (
   logger: Logger,
   abortDivergent = true,
   globalSettings: Record<string, string> = {},
+  tableName: string = MIGRATIONS_TABLE,
 ): Promise<void> => {
   // Validate the migrations directory path for security
   const validatedPath = validateMigrationsHome(migrationsHome)
 
-  const migrationsApplied = await getAppliedMigrations(client)
+  const migrationsApplied = await getAppliedMigrations(client, tableName)
   validateAppliedMigrations(migrationsApplied, migrations)
 
   const appliedMigrationsList: string[] = []
@@ -544,7 +563,7 @@ const applyMigrations = async (
       throw e
     }
 
-    await recordMigration(client, migration, checksum)
+    await recordMigration(client, migration, checksum, tableName)
 
     appliedMigrationsList.push(migration.file)
   }
@@ -609,8 +628,10 @@ export const runMigration = async (config: MigrationRunConfig): Promise<void> =>
     throw new Error(`Failed to connect to ClickHouse at ${host}: ${sanitizeErrorMessage(getErrorMessage(e))}`)
   }
 
+  const migrationTableName = config.migrationTableName || MIGRATIONS_TABLE
+
   try {
-    await initMigrationTable(client, config.tableEngine || DEFAULT_TABLE_ENGINE)
+    await initMigrationTable(client, config.tableEngine || DEFAULT_TABLE_ENGINE, migrationTableName)
 
     const settings = { ...conn.settings, ...(config.settings || {}) }
 
@@ -621,6 +642,7 @@ export const runMigration = async (config: MigrationRunConfig): Promise<void> =>
       config.logger,
       config.abortDivergent ?? true,
       settings,
+      migrationTableName,
     )
   } catch (e: unknown) {
     await client.close()
@@ -669,11 +691,13 @@ export const getMigrationStatus = async (config: MigrationStatusConfig): Promise
     throw new Error(`Failed to connect to ClickHouse at ${host}: ${sanitizeErrorMessage(getErrorMessage(e))}`)
   }
 
+  const migrationTableName = config.migrationTableName || MIGRATIONS_TABLE
+
   // Check if migrations table exists
   let migrationsApplied: Map<number, MigrationsRowData>
   try {
-    await initMigrationTable(client, config.tableEngine || DEFAULT_TABLE_ENGINE)
-    migrationsApplied = await getAppliedMigrations(client)
+    await initMigrationTable(client, config.tableEngine || DEFAULT_TABLE_ENGINE, migrationTableName)
+    migrationsApplied = await getAppliedMigrations(client, migrationTableName)
   } catch (e: unknown) {
     await client.close()
     throw new Error(`Failed to access migrations table: ${sanitizeErrorMessage(getErrorMessage(e))}`)
@@ -740,4 +764,3 @@ export const displayMigrationStatus = (statusList: MigrationStatus[], logger: Lo
 
   logger.info('')
 }
-
