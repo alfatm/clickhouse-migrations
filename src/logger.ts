@@ -6,7 +6,7 @@ const COLORS = {
   RESET: '\x1b[0m',
 } as const
 
-export type LogLevel = 'info' | 'error' | 'warn' | 'success'
+export type LogLevel = 'info' | 'error' | 'warn'
 
 // Structured logging severity levels
 export type Severity =
@@ -43,8 +43,6 @@ export interface Logger {
   info: (message: string) => void
   error: (message: string, details?: string) => void
   warn: (message: string) => void
-  success: (message: string) => void
-  log: (message: string) => void
 }
 
 class ConsoleLogger implements Logger {
@@ -75,18 +73,6 @@ class ConsoleLogger implements Logger {
   warn(message: string): void {
     if (this.shouldLog('warn')) {
       console.log(COLORS.YELLOW, `  Warning: ${message}`, COLORS.RESET)
-    }
-  }
-
-  success(message: string): void {
-    if (this.shouldLog('info')) {
-      console.log(`${COLORS.GREEN}✓ ${COLORS.RESET}${message}`)
-    }
-  }
-
-  log(message: string): void {
-    if (this.shouldLog('debug')) {
-      console.log(message)
     }
   }
 }
@@ -132,22 +118,7 @@ class JsonLogger implements Logger {
       this.formatLog('WARNING', message)
     }
   }
-
-  success(message: string): void {
-    if (this.shouldLog('info')) {
-      this.formatLog('NOTICE', message)
-    }
-  }
-
-  log(message: string): void {
-    if (this.shouldLog('debug')) {
-      this.formatLog('DEFAULT', message)
-    }
-  }
 }
-
-// Default logger instance
-let currentLogger: Logger = new ConsoleLogger()
 
 // Factory function to create a logger based on options
 export const createLogger = (options: LoggerOptions = {}): Logger => {
@@ -158,24 +129,6 @@ export const createLogger = (options: LoggerOptions = {}): Logger => {
   }
 
   return new ConsoleLogger(prefix, minLevel)
-}
-
-// Get the current logger instance
-export const getLogger = (): Logger => currentLogger
-
-// Set a custom logger (useful for testing)
-export const setLogger = (logger: Logger): void => {
-  currentLogger = logger
-}
-
-// Configure logger with options
-export const configureLogger = (options: LoggerOptions = {}): void => {
-  currentLogger = createLogger(options)
-}
-
-// Reset to default console logger
-export const resetLogger = (): void => {
-  currentLogger = new ConsoleLogger()
 }
 
 // Export COLORS for backward compatibility with displayMigrationStatus

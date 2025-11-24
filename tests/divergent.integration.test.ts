@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { createLogger } from '../src/logger'
 import { runMigration } from '../src/migrate'
 import { createMockClickHouseClient } from './helpers/mockClickHouseClient'
 import { cleanupTest, setupConsoleSpy, setupIntegrationTest } from './helpers/testSetup'
@@ -39,6 +40,7 @@ describe('Divergent migration tests with abort_divergent flag', () => {
       json: () => Promise.resolve([{ version: 1, checksum: 'old_checksum_value', migration_name: '1_init.sql' }]),
     })
 
+    const logger = createLogger()
     await expect(
       runMigration({
         migrationsHome: 'tests/migrations/one',
@@ -48,6 +50,7 @@ describe('Divergent migration tests with abort_divergent flag', () => {
         dbName: 'analytics',
         abortDivergent: true,
         createDatabase: true,
+        logger,
       }),
     ).rejects.toThrow(
       "Migration file shouldn't be changed after apply. Please restore content of the 1_init.sql migration.",
@@ -60,6 +63,7 @@ describe('Divergent migration tests with abort_divergent flag', () => {
       json: () => Promise.resolve([{ version: 1, checksum: 'old_checksum_value', migration_name: '1_init.sql' }]),
     })
 
+    const logger = createLogger()
     await runMigration({
       migrationsHome: 'tests/migrations/one',
       host: 'http://sometesthost:8123',
@@ -68,6 +72,7 @@ describe('Divergent migration tests with abort_divergent flag', () => {
       dbName: 'analytics',
       abortDivergent: false,
       createDatabase: true,
+      logger,
     })
 
     // Should log warning message

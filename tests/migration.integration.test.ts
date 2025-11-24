@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { createLogger } from '../src/logger'
 import { runMigration } from '../src/migrate'
 import { createMockClickHouseClient } from './helpers/mockClickHouseClient'
 import { cleanupTest, setupIntegrationTest } from './helpers/testSetup'
@@ -31,6 +32,7 @@ describe('Migration tests', () => {
     const execSpy = vi.spyOn(mockClient, 'exec')
     const insertSpy = vi.spyOn(mockClient, 'insert')
 
+    const logger = createLogger()
     await runMigration({
       migrationsHome: 'tests/migrations/one',
       host: 'http://sometesthost:8123',
@@ -39,6 +41,7 @@ describe('Migration tests', () => {
       dbName: 'analytics',
       abortDivergent: true,
       createDatabase: true,
+      logger,
     })
 
     expect(execSpy).toHaveBeenCalledTimes(3)

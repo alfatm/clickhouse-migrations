@@ -3,7 +3,7 @@ import { readdir, readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { type ClickHouseClient, type ClickHouseClientConfigOptions, createClient } from '@clickhouse/client'
 import { setupConnectionConfig } from './dsn-parser'
-import { COLORS, getLogger } from './logger'
+import { COLORS, type Logger } from './logger'
 import { sqlQueries, sqlSets } from './sql-parse'
 
 export type MigrationBase = {
@@ -51,6 +51,7 @@ export type MigrationRunConfig = {
   abortDivergent?: boolean
   createDatabase?: boolean
   settings?: Record<string, string>
+  logger: Logger
 } & ConnectionConfig
 
 export type MigrationStatusConfig = {
@@ -59,6 +60,7 @@ export type MigrationStatusConfig = {
   dbName?: string
   tableEngine?: string
   settings?: Record<string, string>
+  logger: Logger
 } & ConnectionConfig
 
 export type MigrationStatus = {
@@ -493,6 +495,7 @@ const applyMigrations = async (
   client: ClickHouseClient,
   migrations: MigrationBase[],
   migrationsHome: string,
+  logger: Logger,
   abortDivergent = true,
   globalSettings: Record<string, string> = {},
 ): Promise<void> => {
@@ -518,7 +521,7 @@ const applyMigrations = async (
             `Migration file shouldn't be changed after apply. Please restore content of the ${appliedMigration.migration_name} migration.`,
           )
         }
-        getLogger().warn(
+        logger.warn(
           `applied migration ${appliedMigration.migration_name} has different checksum than the file on filesystem. Continuing due to --abort-divergent=false.`,
         )
       }
@@ -536,7 +539,7 @@ const applyMigrations = async (
       await executeMigrationQueries(client, queries, mergedSettings, migration.file)
     } catch (e: unknown) {
       if (appliedMigrationsList.length > 0) {
-        getLogger().info(`The migration(s) ${appliedMigrationsList.join(', ')} was successfully applied!`)
+        logger.info(`The migration(s) ${appliedMigrationsList.join(', ')} was successfully applied!`)
       }
       throw e
     }
@@ -547,9 +550,9 @@ const applyMigrations = async (
   }
 
   if (appliedMigrationsList.length > 0) {
-    getLogger().info(`The migration(s) ${appliedMigrationsList.join(', ')} was successfully applied!`)
+    logger.info(`The migration(s) ${appliedMigrationsList.join(', ')} was successfully applied!`)
   } else {
-    getLogger().info(`No migrations to apply.`)
+    logger.info(`No migrations to apply.`)
   }
 }
 
@@ -611,7 +614,14 @@ const runMigration = async (config: MigrationRunConfig): Promise<void> => {
 
     const settings = { ...conn.settings, ...(config.settings || {}) }
 
-    await applyMigrations(client, migrations, config.migrationsHome, config.abortDivergent ?? true, settings)
+    await applyMigrations(
+      client,
+      migrations,
+      config.migrationsHome,
+      config.logger,
+      config.abortDivergent ?? true,
+      settings,
+    )
   } catch (e: unknown) {
     await client.close()
     throw e
@@ -703,8 +713,7 @@ const getMigrationStatus = async (config: MigrationStatusConfig): Promise<Migrat
   return statusList
 }
 
-const displayMigrationStatus = (statusList: MigrationStatus[]): void => {
-  const logger = getLogger()
+const displayMigrationStatus = (statusList: MigrationStatus[], logger: Logger): void => {
   const appliedCount = statusList.filter((s) => s.applied).length
   const pendingCount = statusList.filter((s) => !s.applied).length
   const divergentCount = statusList.filter((s) => s.applied && s.checksumMatch === false).length
@@ -715,21 +724,21 @@ const displayMigrationStatus = (statusList: MigrationStatus[]): void => {
     logger.warn(`${divergentCount} applied migration(s) have checksum mismatches`)
   }
 
-  logger.log('')
+  logger.info('')
 
   for (const status of statusList) {
     if (status.applied) {
       const statusSymbol = status.checksumMatch === false ? `${COLORS.YELLOW}⚠ ` : `${COLORS.GREEN}✓ `
       const checksumWarning = status.checksumMatch === false ? `${COLORS.YELLOW} (checksum mismatch)` : ''
-      logger.log(
+      logger.info(
         `${statusSymbol}${COLORS.RESET}[${status.version}] ${status.file} - applied at ${status.appliedAt}${checksumWarning}${COLORS.RESET}`,
       )
     } else {
-      logger.log(`${COLORS.CYAN}○${COLORS.RESET} [${status.version}] ${status.file} - pending`)
+      logger.info(`${COLORS.CYAN}○${COLORS.RESET} [${status.version}] ${status.file} - pending`)
     }
   }
 
-  logger.log('')
+  logger.info('')
 }
 
 export { runMigration, getMigrationStatus, displayMigrationStatus }

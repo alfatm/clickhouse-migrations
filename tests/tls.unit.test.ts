@@ -21,6 +21,7 @@ vi.mock('@clickhouse/client', () => ({
   createClient: mockCreateClient.mockReturnValue(mockClickHouseClient),
 }))
 
+import { createLogger } from '../src/logger'
 import { runMigration } from '../src/migrate'
 
 describe('TLS Configuration Unit Tests', () => {
@@ -37,6 +38,7 @@ describe('TLS Configuration Unit Tests', () => {
 
   describe('TLS configuration building', () => {
     it('should create ClickHouse client without TLS when no certificates provided', async () => {
+      const logger = createLogger()
       await runMigration({
         migrationsHome: 'tests/migrations/one',
         host: 'http://clickhouse:8123',
@@ -45,6 +47,7 @@ describe('TLS Configuration Unit Tests', () => {
         dbName: 'analytics',
         abortDivergent: true,
         createDatabase: true,
+        logger,
       })
 
       // Verify createClient was called without TLS configuration
@@ -59,6 +62,7 @@ describe('TLS Configuration Unit Tests', () => {
     })
 
     it('should create ClickHouse client with CA certificate only', async () => {
+      const logger = createLogger()
       await runMigration({
         migrationsHome: 'tests/migrations/one',
         host: 'https://secure-clickhouse:8443',
@@ -71,6 +75,7 @@ describe('TLS Configuration Unit Tests', () => {
         caCert: caCertPath,
         abortDivergent: true,
         createDatabase: true,
+        logger,
       })
 
       // Verify createClient was called with TLS configuration containing only CA cert
@@ -92,6 +97,7 @@ describe('TLS Configuration Unit Tests', () => {
     })
 
     it('should create ClickHouse client with full TLS configuration', async () => {
+      const logger = createLogger()
       await runMigration({
         migrationsHome: 'tests/migrations/one',
         host: 'https://secure-clickhouse:8443',
@@ -106,6 +112,7 @@ describe('TLS Configuration Unit Tests', () => {
         key: clientKeyPath,
         abortDivergent: true,
         createDatabase: true,
+        logger,
       })
 
       // Verify createClient was called with complete TLS configuration
@@ -129,6 +136,7 @@ describe('TLS Configuration Unit Tests', () => {
     })
 
     it('should combine TLS configuration with other connection options', async () => {
+      const logger = createLogger()
       await runMigration({
         migrationsHome: 'tests/migrations/one',
         host: 'https://secure-clickhouse:8443',
@@ -143,6 +151,7 @@ describe('TLS Configuration Unit Tests', () => {
         key: clientKeyPath,
         abortDivergent: true,
         createDatabase: true,
+        logger,
       })
 
       type CallArgs = [config?: Record<string, unknown>]
@@ -177,6 +186,7 @@ describe('TLS Configuration Unit Tests', () => {
 
   describe('Certificate content validation', () => {
     it('should read actual certificate content from files', async () => {
+      const logger = createLogger()
       await runMigration({
         migrationsHome: 'tests/migrations/one',
         host: 'https://secure-clickhouse:8443',
@@ -191,6 +201,7 @@ describe('TLS Configuration Unit Tests', () => {
         key: clientKeyPath,
         abortDivergent: true,
         createDatabase: true,
+        logger,
       })
 
       type CallArgs = [config?: Record<string, unknown>]
@@ -216,6 +227,7 @@ describe('TLS Configuration Unit Tests', () => {
 
   describe('Database creation with TLS', () => {
     it('should use TLS for both database creation and migration operations', async () => {
+      const logger = createLogger()
       await runMigration({
         migrationsHome: 'tests/migrations/one',
         host: 'https://secure-clickhouse:8443',
@@ -228,6 +240,7 @@ describe('TLS Configuration Unit Tests', () => {
         caCert: caCertPath,
         abortDivergent: true,
         createDatabase: true,
+        logger,
       })
 
       // Should have exactly 2 calls: one for DB creation, one for migrations

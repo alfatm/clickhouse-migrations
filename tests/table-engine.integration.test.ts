@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { createLogger } from '../src/logger'
 import { runMigration } from '../src/migrate'
 import { createMockClickHouseClient } from './helpers/mockClickHouseClient'
 import { cleanupTest, setupIntegrationTest } from './helpers/testSetup'
@@ -29,6 +30,7 @@ describe('Table engine configuration tests', () => {
   it('Should create _migrations table with default MergeTree engine', async () => {
     const execSpy = vi.spyOn(mockClient, 'exec')
 
+    const logger = createLogger()
     await runMigration({
       migrationsHome: 'tests/migrations/one',
       host: 'http://sometesthost:8123',
@@ -37,6 +39,7 @@ describe('Table engine configuration tests', () => {
       dbName: 'analytics',
       abortDivergent: true,
       createDatabase: true,
+      logger,
     })
 
     // Check that _migrations table was created with default MergeTree engine
@@ -61,6 +64,7 @@ describe('Table engine configuration tests', () => {
 
     const customEngine = "ReplicatedMergeTree('/clickhouse/tables/{database}/migrations', '{replica}')"
 
+    const logger = createLogger()
     await runMigration({
       migrationsHome: 'tests/migrations/one',
       host: 'http://sometesthost:8123',
@@ -70,6 +74,7 @@ describe('Table engine configuration tests', () => {
       tableEngine: customEngine,
       abortDivergent: true,
       createDatabase: true,
+      logger,
     })
 
     // Check that _migrations table was created with custom engine
@@ -94,6 +99,7 @@ describe('Table engine configuration tests', () => {
 
     const cloudEngine = 'SharedMergeTree'
 
+    const logger = createLogger()
     await runMigration({
       migrationsHome: 'tests/migrations/one',
       host: 'http://sometesthost:8123',
@@ -103,6 +109,7 @@ describe('Table engine configuration tests', () => {
       tableEngine: cloudEngine,
       abortDivergent: true,
       createDatabase: true,
+      logger,
     })
 
     // Check that _migrations table was created with SharedMergeTree

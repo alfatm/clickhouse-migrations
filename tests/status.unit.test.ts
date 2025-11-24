@@ -1,6 +1,7 @@
 import * as fs from 'node:fs/promises'
 import * as clickhouse from '@clickhouse/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createLogger } from '../src/logger'
 import { getMigrationStatus, type MigrationStatusConfig } from '../src/migrate'
 import { createMockClickHouseClient } from './helpers/mockClickHouseClient'
 import { MIGRATION_WITH_TLS_TIMEOUT } from './helpers/testConstants'
@@ -51,6 +52,7 @@ describe('getMigrationStatus', () => {
     dbName: 'test_db',
     migrationsHome: './migrations',
     ...overrides,
+    logger: overrides?.logger ?? createLogger(),
   })
 
   it('should return pending status for unapplied migrations', async () => {
@@ -196,7 +198,6 @@ describe('getMigrationStatus', () => {
     mockReaddir.mockRejectedValue(new Error('ENOENT: no such file or directory'))
 
     const config = createConfig()
-
     await expect(getMigrationStatus(config)).rejects.toThrow('No migration directory')
   })
 
@@ -209,7 +210,6 @@ describe('getMigrationStatus', () => {
     mockClient.query.mockRejectedValue(new Error('Connection refused'))
 
     const config = createConfig()
-
     await expect(getMigrationStatus(config)).rejects.toThrow('Failed to access migrations table')
     expect(mockClient.close).toHaveBeenCalled()
   })

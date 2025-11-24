@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { Command } from 'commander'
-import { configureLogger, getLogger, type LogFormat, type MinLogLevel } from './logger'
+import { createLogger, type LogFormat, type MinLogLevel } from './logger'
 import { displayMigrationStatus, getMigrationStatus, runMigration } from './migrate'
 
 export type CliParameters = {
@@ -118,8 +118,8 @@ export const setupCli = (): Command => {
       process.env.CH_MIGRATIONS_LOG_PREFIX,
     )
     .action(async (options: CliParameters) => {
+      const logger = createLogger({ format: options.logFormat, minLevel: options.logLevel, prefix: options.logPrefix })
       try {
-        configureLogger({ format: options.logFormat, minLevel: options.logLevel, prefix: options.logPrefix })
         await runMigration({
           migrationsHome: options.migrationsHome,
           dsn: options.dsn,
@@ -135,9 +135,10 @@ export const setupCli = (): Command => {
           key: options.key,
           abortDivergent: parseBoolean(options.abortDivergent, true),
           createDatabase: parseBoolean(options.createDatabase, true),
+          logger,
         })
       } catch (e: unknown) {
-        getLogger().error(e instanceof Error ? e.message : String(e))
+        logger.error(e instanceof Error ? e.message : String(e))
         process.exit(1)
       }
     })
@@ -184,8 +185,8 @@ export const setupCli = (): Command => {
       process.env.CH_MIGRATIONS_LOG_PREFIX,
     )
     .action(async (options: CliParameters) => {
+      const logger = createLogger({ format: options.logFormat, minLevel: options.logLevel, prefix: options.logPrefix })
       try {
-        configureLogger({ format: options.logFormat, minLevel: options.logLevel, prefix: options.logPrefix })
         const statusList = await getMigrationStatus({
           migrationsHome: options.migrationsHome,
           dsn: options.dsn,
@@ -198,10 +199,11 @@ export const setupCli = (): Command => {
           caCert: options.caCert,
           cert: options.cert,
           key: options.key,
+          logger,
         })
-        displayMigrationStatus(statusList)
+        displayMigrationStatus(statusList, logger)
       } catch (e: unknown) {
-        getLogger().error(e instanceof Error ? e.message : String(e))
+        logger.error(e instanceof Error ? e.message : String(e))
         process.exit(1)
       }
     })

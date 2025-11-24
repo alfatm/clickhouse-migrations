@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { createLogger } from '../src/logger'
 import { runMigration } from '../src/migrate'
 import { createMockClickHouseClient } from './helpers/mockClickHouseClient'
 import { cleanupTest } from './helpers/testSetup'
@@ -20,6 +21,7 @@ describe('Duplicate version validation', () => {
   })
 
   it('Should reject migrations with duplicate versions', async () => {
+    const logger = createLogger()
     await expect(
       runMigration({
         migrationsHome: 'tests/migrations/duplicate-versions',
@@ -29,6 +31,7 @@ describe('Duplicate version validation', () => {
         dbName: 'analytics',
         abortDivergent: true,
         createDatabase: false, // since we check migration files before DB operations
+        logger,
       }),
     ).rejects.toThrow(/Found duplicate migration version.*1/)
   })
