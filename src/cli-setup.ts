@@ -1,7 +1,7 @@
 import { Command } from 'commander'
+import packageJson from '../package.json' with { type: 'json' }
 import { createLogger, type LogFormat, type MinLogLevel } from './logger'
 import { displayMigrationStatus, getMigrationStatus, runMigration } from './migrate'
-import packageJson from '../package.json' with { type: 'json' }
 
 export type CliParameters = {
   migrationsHome: string
@@ -52,10 +52,7 @@ export const getVersion = (): string => {
 export const setupCli = (): Command => {
   const program = new Command()
 
-  program
-    .name('clickhouse-migrations')
-    .description('ClickHouse migrations.')
-    .version(getVersion())
+  program.name('clickhouse-migrations').description('ClickHouse migrations.').version(getVersion())
 
   program
     .command('migrate')
