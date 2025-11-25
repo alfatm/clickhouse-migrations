@@ -7,13 +7,22 @@
 # Workflow Overview:
 # 1. Code Quality: Runs linting and formatting checks
 # 2. Unit Tests: Fast, isolated tests without external dependencies
-# 3. Integration Tests: Tests against real ClickHouse instances
+# 3. Integration Tests: Tests against real ClickHouse instances (scheduled only)
 # 4. E2E Tests: End-to-end CLI testing with migration verification
 #
 # Triggers:
 # - Manual dispatch: Can be triggered manually from GitHub Actions UI
-# - Push to main: Runs on every push to main branch (except markdown changes)
-# - Scheduled: Runs daily at 9:00 AM UTC to catch issues early
+# - Pull requests: Runs code quality + unit tests (prevents bypassing Husky hooks)
+# - Scheduled: Monthly full integration tests with ClickHouse (1st day of month)
+#
+# Test Strategy:
+# - On PR: Code quality + unit tests (safety net against --no-verify)
+# - Monthly scheduled: Full integration test matrix to catch compatibility issues
+# - Manual trigger: Run full test suite on demand
+#
+# Note: Husky hooks already enforce tests locally (pre-commit and pre-push),
+# so CI tests on main branch push are redundant. PR tests catch cases where
+# developers might bypass hooks with --no-verify.
 #
 # Test Matrix:
 # - Node.js versions: 20, 22, 24 (covering LTS and current releases)
@@ -22,7 +31,7 @@
 # Jobs:
 # - code-quality: Linting and formatting checks
 # - unit-tests: Fast unit tests across Node.js versions
-# - integration-tests: Tests against real ClickHouse instances
+# - integration-tests: Tests against real ClickHouse instances (conditional)
 #
 # Documentation:
 # - Vitest: https://vitest.dev/
@@ -32,21 +41,27 @@
 name: Tests
 
 on:
-  # Allow manual workflow trigger
+  # Allow manual workflow trigger with option to run integration tests
   workflow_dispatch:
+    inputs:
+      run_integration_tests:
+        description: 'Run integration tests with ClickHouse'
+        required: false
+        type: boolean
+        default: true
 
-  # Run on pushes to main branch
-  push:
+  # Run on pull requests (code quality + unit tests)
+  # This catches cases where developers bypass Husky hooks with --no-verify
+  pull_request:
     branches:
       - main
-    # Skip workflow if only documentation changed
     paths-ignore:
       - '**/*.md'
 
-  # Run daily to catch integration issues early
+  # Run full integration tests monthly (1st day of month at 9:00 AM UTC)
   schedule:
-    # Runs at 9:00 AM UTC every day
-    - cron: '0 9 * * *'
+    # Monthly: 1st day of the month at 9:00 AM UTC
+    - cron: '0 9 1 * *'
 
 jobs:
   # ============================================================================
@@ -120,6 +135,10 @@ jobs:
   # Runs integration and E2E tests against real ClickHouse instances.
   # Tests the CLI and migration functionality with actual databases.
   #
+  # Conditional Execution:
+  # - Only runs on manual dispatch or monthly scheduled runs
+  # - Skipped on regular pushes to save CI resources
+  #
   # Matrix Strategy:
   # - Node.js versions: 20, 22, 24
   # - ClickHouse versions:
@@ -137,6 +156,12 @@ jobs:
     name: Integration Tests (Node ${{ matrix.node }}, ClickHouse ${{ matrix.clickhouse }})
     runs-on: ubuntu-latest
     needs: unit-tests
+    # Only run integration tests on:
+    # - Scheduled runs (monthly)
+    # - Manual dispatch when explicitly enabled (default: true)
+    if: |
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' && inputs.run_integration_tests)
     strategy:
       fail-fast: true
       matrix:
@@ -201,8 +226,8 @@ jobs:
             exit 1
           fi
 
-      - name: Run TLS Integration Tests
-        run: bun test -- --testPathPatterns=tls.e2e.test.ts --verbose
+      - name: Run E2E Tests
+        run: bun run test:e2e
         timeout-minutes: 10
         env:
           CI: true
