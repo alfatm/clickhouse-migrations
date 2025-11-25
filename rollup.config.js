@@ -1,6 +1,7 @@
 import typescript from '@rollup/plugin-typescript';
 import resolve from '@rollup/plugin-node-resolve';
 import commonjs from '@rollup/plugin-commonjs';
+import json from '@rollup/plugin-json';
 import preserveShebang from 'rollup-plugin-preserve-shebang';
 
 export default [
@@ -58,6 +59,7 @@ export default [
     },
     external: ['@clickhouse/client', 'commander', 'node:crypto', 'node:fs', 'node:fs/promises', 'node:path', 'node:url'],
     plugins: [
+      json(),
       resolve(),
       commonjs(),
       typescript({

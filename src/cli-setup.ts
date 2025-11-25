@@ -1,9 +1,7 @@
-import { readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { Command } from 'commander'
 import { createLogger, type LogFormat, type MinLogLevel } from './logger'
 import { displayMigrationStatus, getMigrationStatus, runMigration } from './migrate'
+import packageJson from '../package.json' with { type: 'json' }
 
 export type CliParameters = {
   migrationsHome: string
@@ -47,14 +45,7 @@ export const parseBoolean = (value: unknown, defaultValue = true): boolean => {
 }
 
 // Read version from package.json
-// When compiled to dist/, we need to go up one directory to find package.json
-export const getVersion = (): string | undefined => {
-  // In ES modules, we need to derive __dirname from import.meta.url
-  const __filename = fileURLToPath(import.meta.url)
-  const __dirname = dirname(__filename)
-  // __dirname points to dist/ after compilation, so we go up to project root
-  const packageJsonPath = join(__dirname, '..', 'package.json')
-  const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'))
+export const getVersion = (): string => {
   return packageJson.version
 }
 
@@ -64,7 +55,7 @@ export const setupCli = (): Command => {
   program
     .name('clickhouse-migrations')
     .description('ClickHouse migrations.')
-    .version(getVersion() ?? '')
+    .version(getVersion())
 
   program
     .command('migrate')
