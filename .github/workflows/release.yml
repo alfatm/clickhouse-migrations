@@ -18,20 +18,41 @@
 # - publish: Builds, tests, and publishes the package to npm (only on release)
 #
 # Authentication:
-# - Uses OIDC Trusted Publisher for secure, automated npm publishing
-# - No secrets required - GitHub issues short-lived tokens automatically
-# - Must be configured in npm package settings (see setup instructions below)
+# - Release Please: Uses RELEASE_PLEASE_TOKEN secret (required for org repos)
+# - npm Publishing: Uses OIDC Trusted Publisher for secure, automated publishing
+#   No npm secrets required - GitHub issues short-lived tokens automatically
 #
-# Setup Instructions for Trusted Publisher:
-# 1. Go to https://www.npmjs.com/package/@volkagames/clickhouse-migrations/access
-# 2. Scroll to "Publishing access" section
-# 3. Click "Add trusted publisher"
-# 4. Fill in:
-#    - Provider: GitHub Actions
-#    - Organization: volkagames
-#    - Repository: clickhouse-migrations
-#    - Workflow: release.yml
-#    - Environment: (leave blank)
+# Setup Instructions:
+#
+# 1. Create GitHub Personal Access Token (for Release Please):
+#    a. Go to https://github.com/settings/tokens?type=beta
+#    b. Click "Generate new token" (fine-grained token)
+#    c. Configure token:
+#       - Token name: "Release Please - volkagames/clickhouse-migrations"
+#       - Expiration: 1 year (or your preference)
+#       - Resource owner: volkagames
+#       - Repository access: Only select repositories → clickhouse-migrations
+#       - Permissions:
+#         * Contents: Read and write
+#         * Pull requests: Read and write
+#         * Metadata: Read-only (automatically selected)
+#    d. Generate token and copy it
+#    e. Add to repository secrets:
+#       - Go to https://github.com/volkagames/clickhouse-migrations/settings/secrets/actions
+#       - Click "New repository secret"
+#       - Name: RELEASE_PLEASE_TOKEN
+#       - Value: paste the token
+#
+# 2. Configure npm Trusted Publisher (for npm publishing):
+#    a. Go to https://www.npmjs.com/package/@volkagames/clickhouse-migrations/access
+#    b. Scroll to "Publishing access" section
+#    c. Click "Add trusted publisher"
+#    d. Fill in:
+#       - Provider: GitHub Actions
+#       - Organization: volkagames
+#       - Repository: clickhouse-migrations
+#       - Workflow: release.yml
+#       - Environment: (leave blank)
 #
 # Documentation:
 # - Release Please: https://github.com/googleapis/release-please
@@ -76,6 +97,8 @@ jobs:
         with:
           # Configuration for Node.js package releases
           release-type: node
+          # Use custom token for organization repositories
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
 
   # ============================================================================
   # Publish Job
