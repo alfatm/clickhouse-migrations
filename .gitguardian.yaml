@@ -1,0 +1,5 @@
+# GitGuardian configuration file
+# Suppress false positives for test certificates used in Docker test environment
+
+paths-ignore:
+  - ".docker/clickhouse_tls/certificates/**"  # Test certificates for ClickHouse TLS testing
